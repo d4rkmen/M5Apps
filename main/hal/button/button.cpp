@@ -1,6 +1,12 @@
+/**
+ * @file button.cpp
+ * @brief Button class for debouncing and reading button state
+ * @author d4rkmen
+ * @license Apache License 2.0
+ */
 #include "button.h"
 #include <driver/gpio.h>
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 
 Button::Button(uint8_t pin, uint16_t debounce_ms)
     : _pin(pin), _delay(debounce_ms), _state(true), _ignore_until(0), _has_changed(false)

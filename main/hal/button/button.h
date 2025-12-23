@@ -1,5 +1,11 @@
-#ifndef Button_h
-#define Button_h
+/**
+ * @file button.h
+ * @brief Button class for debouncing and reading button state
+ * @author d4rkmen
+ * @license Apache License 2.0
+ */
+#pragma once
+
 #include <stdint.h>
 
 class Button
@@ -22,5 +28,3 @@ private:
     uint32_t _ignore_until;
     bool _has_changed;
 };
-
-#endif
