@@ -10,7 +10,7 @@
  */
 #include "../../launcher.h"
 #include "../menu/menu_render_callback.hpp"
-#include "../../../utils/common_define.h"
+#include "common_define.h"
 
 #include "assets/bat1.h"
 #include "assets/bat2.h"

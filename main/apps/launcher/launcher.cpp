@@ -14,7 +14,7 @@
 #include "esp_log.h"
 #include "apps/utils/theme/theme_define.h"
 #include "apps/utils/anim/anim_define.h"
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 #include "apps/utils/flash/flash_tools.h"
 #include "apps/utils/ui/dialog.h"
 #include "apps/utils/screenshot/screenshot_tools.h"

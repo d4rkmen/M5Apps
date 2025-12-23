@@ -8,7 +8,7 @@
  *
  */
 #include "hl_text.h"
-#include "../common_define.h"
+#include "common_define.h"
 #include "../theme/theme_define.h"
 #include <string.h>
 

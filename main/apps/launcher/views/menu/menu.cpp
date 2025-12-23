@@ -14,7 +14,7 @@
 #include "menu_render_callback.hpp"
 #include <string>
 #include <vector>
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 #include "apps/utils/ui/dialog.h"
 
 static const char* TAG = "APP_LAUNCHER";

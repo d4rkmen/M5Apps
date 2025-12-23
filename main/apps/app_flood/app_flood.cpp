@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "flood.h"
 #include "apps/utils/ui/dialog.h"
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 
 #define SCROLL_BAR_WIDTH 4
 #define LIST_HEADER_HEIGHT 0

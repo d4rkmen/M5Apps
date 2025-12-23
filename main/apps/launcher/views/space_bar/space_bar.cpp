@@ -1,8 +1,8 @@
 #include "../../launcher.h"
 #include "lgfx/v1/lgfx_fonts.hpp"
-#include "../../../utils/theme/theme_define.h"
-#include "../../../utils/common_define.h"
-#include "../../../utils/flash/ptable_tools.h"
+#include "apps/utils/theme/theme_define.h"
+#include "common_define.h"
+#include "apps/utils/flash/ptable_tools.h"
 
 #include "assets/full.h"
 #include "assets/empty.h"

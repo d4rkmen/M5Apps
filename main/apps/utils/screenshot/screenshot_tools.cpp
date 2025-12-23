@@ -10,7 +10,7 @@
 #include "screenshot_tools.h"
 #include "hal/hal.h"
 #include "hal/keyboard/keyboard.h"
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 #include "apps/utils/theme/theme_define.h"
 #include "esp_log.h"
 #include <format>

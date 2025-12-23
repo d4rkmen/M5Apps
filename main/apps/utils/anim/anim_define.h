@@ -9,7 +9,7 @@
  *
  */
 #pragma once
-#include "../common_define.h"
+#include "common_define.h"
 
 #define ANIM_APP_OPEN()                                                                                                        \
     for (int i = 10; i < 123; i += 8)                                                                                          \

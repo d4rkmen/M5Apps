@@ -7,7 +7,7 @@
 #include "esp_log.h"
 #include "../anim/hl_text.h"
 #include "dialog.h"
-#include "../common_define.h"
+#include "common_define.h"
 
 static const char* TAG = "SETTINGS_SCREEN";
 static const char* HINT_ITEMS = "[UP][DOWN] [LEFT][RIGHT] [ESC] [ENTER]";

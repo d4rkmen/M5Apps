@@ -12,7 +12,7 @@
 #include "lgfx/v1/misc/enum.hpp"
 #include "esp_log.h"
 #include "apps/utils/theme/theme_define.h"
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 
 using namespace MOONCAKE::APPS;
 

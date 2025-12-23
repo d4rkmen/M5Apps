@@ -12,7 +12,7 @@
 #include "hal.h"
 #include "apps/utils/smooth_menu/src/smooth_menu.h"
 #include "apps/utils/icon/icon_define.h"
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 #include "apps/utils/anim/scroll_text.h"
 #include "apps/utils/anim/hl_text.h"
 #include "lgfx/v1/lgfx_fonts.hpp"

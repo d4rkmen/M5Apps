@@ -2,7 +2,7 @@
 
 #include "hal.h"
 #include "../theme/theme_define.h"
-#include "../common_define.h"
+#include "common_define.h"
 #include "../anim/scroll_text.h"
 #include <string>
 #include <vector>
