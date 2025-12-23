@@ -95,6 +95,7 @@ namespace HAL
           _mode(LEDMode::OFF), _color(), _param1(0), _param2(0), _param3(0), _param4(0), _pattern_step(0), _fade_step(0)
     {
         memset(_led_pixel, 0, sizeof(_led_pixel));
+        init();
     }
 
     LED::~LED()
