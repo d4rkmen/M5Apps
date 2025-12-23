@@ -28,6 +28,7 @@ namespace HAL
     class HalCardputer : public Hal
     {
     private:
+        void _init_i2c();
         void _init_display();
         void _init_keyboard();
         void _init_speaker();
@@ -47,7 +48,7 @@ namespace HAL
             case HAL::BoardType::CARDPUTER:
                 return "v1.x";
             case HAL::BoardType::CARDPUTER_ADV:
-                return "v2.0";
+                return "ADV";
             default:
                 return "unknown";
             }

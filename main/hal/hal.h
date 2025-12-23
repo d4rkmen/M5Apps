@@ -10,10 +10,12 @@
  */
 #pragma once
 #include "board.h"
-#include "M5GFX.h"
+#include "LovyanGFX.h"
+#include "i2c/i2c_master.h"
 #include "keyboard/keyboard.h"
+#include "bat/battery.h"
 #include "sdcard/sdcard.h"
-#include "button/Button.h"
+#include "button/button.h"
 #include "speaker/speaker.h"
 #include "usb/usb.h"
 #include "wifi/wifi.h"
@@ -38,6 +40,8 @@ namespace HAL
 
         SETTINGS::Settings* _settings;
         KEYBOARD::Keyboard* _keyboard;
+        I2CMaster* _i2c;
+        Battery* _battery;
         Speaker* _speaker;
         Button* _homeButton;
         SDCard* _sdcard;
@@ -49,9 +53,9 @@ namespace HAL
 
     public:
         Hal(SETTINGS::Settings* settings)
-            : _display(nullptr), _canvas(nullptr), _canvas_system_bar(nullptr), _canvas_space_bar(nullptr), _settings(settings),
-              _keyboard(nullptr), _speaker(nullptr), _homeButton(nullptr), _sdcard(nullptr), _usb(nullptr), _wifi(nullptr),
-              _led(nullptr), _sntp_adjusted(false), _board_type(BoardType::AUTO_DETECT)
+            : _settings(settings), _keyboard(nullptr), _i2c(nullptr), _battery(nullptr), _speaker(nullptr),
+              _homeButton(nullptr), _sdcard(nullptr), _usb(nullptr), _wifi(nullptr), _led(nullptr), _sntp_adjusted(false),
+              _board_type(BoardType::AUTO_DETECT)
         {
         }
 
@@ -62,6 +66,8 @@ namespace HAL
         inline LGFX_Sprite* canvas_space_bar() { return _canvas_space_bar; }
         inline SETTINGS::Settings* settings() { return _settings; }
         inline KEYBOARD::Keyboard* keyboard() { return _keyboard; }
+        inline I2CMaster* i2c() { return _i2c; }
+        inline Battery* bat() { return _battery; }
         inline SDCard* sdcard() { return _sdcard; }
         inline USB* usb() { return _usb; }
         inline Button* home_button() { return _homeButton; }
@@ -71,6 +77,7 @@ namespace HAL
 
         inline void setSntpAdjusted(bool isAdjusted) { _sntp_adjusted = isAdjusted; }
         inline bool isSntpAdjusted(void) { return _sntp_adjusted; }
+        inline BoardType board_type() const { return _board_type; }
 
         // Canvas
         inline void canvas_system_bar_update() { _canvas_system_bar->pushSprite(_canvas_space_bar->width(), 0); }

@@ -10,23 +10,26 @@
  */
 #include "hal_cardputer.h"
 #include <mooncake.h>
-#include "apps/utils/common_define.h"
-#include "bat/adc_read.h"
+#include "common_define.h"
+#include "display/display.hpp"
 #include "esp_log.h"
 
 static const char* TAG = "HAL";
 
 using namespace HAL;
 
+void HalCardputer::_init_i2c()
+{
+    ESP_LOGI(TAG, "init i2c");
+    _i2c = new I2CMaster();
+}
+
 void HalCardputer::_init_display()
 {
     ESP_LOGI(TAG, "init display");
 
     // Display
-    // _display = new LGFX_Cardputer;
-    _display = new M5GFX;
-    _display->init();
-    // _display->setRotation(1);
+    _display = new LGFX;
 
     // Canvas
     _canvas = new LGFX_Sprite(_display);
@@ -42,29 +45,43 @@ void HalCardputer::_init_display()
 void HalCardputer::_init_keyboard()
 {
     ESP_LOGI(TAG, "init keyboard");
-    _keyboard = new KEYBOARD::Keyboard;
-    _keyboard->init();
+    _keyboard = new KEYBOARD::Keyboard(this);
     _board_type = _keyboard->boardType();
 }
 
 void HalCardputer::_init_speaker()
 {
     ESP_LOGI(TAG, "init speaker");
-
-    _speaker = new Speaker();
-    _speaker->begin();
+    _speaker = new Speaker(this);
 }
 
-void HalCardputer::_init_button() { _homeButton = new Button(0); }
+void HalCardputer::_init_button()
+{
+    ESP_LOGI(TAG, "init button");
+    _homeButton = new Button(0);
+}
 
-void HalCardputer::_init_bat() { adc_read_init(); }
+void HalCardputer::_init_bat()
+{
+    ESP_LOGI(TAG, "init battery");
+    _battery = new Battery();
+}
 
-void HalCardputer::_init_sdcard() { _sdcard = new SDCard; }
+void HalCardputer::_init_sdcard()
+{
+    ESP_LOGI(TAG, "init sdcard");
+    _sdcard = new SDCard;
+}
 
-void HalCardputer::_init_usb() { _usb = new USB(this); }
+void HalCardputer::_init_usb()
+{
+    ESP_LOGI(TAG, "init usb");
+    _usb = new USB(this);
+}
 
 void HalCardputer::_init_wifi()
 {
+    ESP_LOGI(TAG, "init wifi");
     _wifi = new WiFi(_settings);
     _wifi->set_status_callback(
         [this](wifi_status_t status)
@@ -105,14 +122,15 @@ void HalCardputer::_init_wifi()
 
 void HalCardputer::_init_led()
 {
+    ESP_LOGI(TAG, "init led");
     _led = new LED(RGB_LED_GPIO);
-    _led->init();
 }
 
 void HalCardputer::init()
 {
     ESP_LOGI(TAG, "HAL init");
 
+    _init_i2c();
     _init_display();
     _init_keyboard();
     _init_speaker();
@@ -140,4 +158,4 @@ uint8_t HalCardputer::getBatLevel(float voltage)
     return result;
 }
 
-float HalCardputer::getBatVoltage() { return static_cast<float>(adc_read_get_value()) * 2 / 1000; }
+float HalCardputer::getBatVoltage() { return static_cast<float>(_battery->get_voltage()); }
