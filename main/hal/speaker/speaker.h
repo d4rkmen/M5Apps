@@ -19,12 +19,13 @@
 #define SPEAKER_PIN_WS 43
 #define SPEAKER_I2S_PORT I2S_NUM_1
 #define SPEAKER_I2C_PORT I2C_NUM_1
-#define SPEAKER_I2C_ADDR0 0x18
+#define SPEAKER_I2C_ADDR 0x18
 #define SPEAKER_I2C_FREQ_HZ 400000
 #define SPEAKER_I2C_TIMEOUT_MS 1000
 
 namespace HAL
 {
+    class Hal;
     /**
      * @brief Configuration structure for Speaker
      */
@@ -70,7 +71,7 @@ namespace HAL
     class Speaker
     {
     public:
-        Speaker(BoardType board_type = BoardType::AUTO_DETECT);
+        Speaker(HAL::Hal* hal);
         virtual ~Speaker();
 
         /**
@@ -235,13 +236,16 @@ namespace HAL
                      uint32_t repeat = 1,
                      int channel = -1,
                      bool stop_current_sound = false);
+        inline HAL::Hal* hal() { return _hal; }
 
     private:
+        HAL::Hal* _hal;
         BoardType _board_type;
-        i2c_master_bus_handle_t _bus_handle;
+        // i2c_master_bus_handle_t _bus_handle;
         i2c_master_dev_handle_t _dev_handle;
-        static constexpr const size_t sound_channel_max = 8;
+        static constexpr const size_t CHANNELS_NUM = 8;
         static const uint8_t _default_tone_wav[16];
+        int32_t* mix_buf = nullptr;
 
         /**
          * @brief Wave information structure
@@ -280,9 +284,11 @@ namespace HAL
             volatile bool flip = false;
 
             float liner_buf[2][2] = {{0, 0}, {0, 0}};
+            inline wav_info_t* wav(void) { return &wavinfo[!flip]; }
+            inline wav_info_t* next(void) { return &wavinfo[flip]; }
         };
 
-        channel_info_t _ch_info[sound_channel_max];
+        channel_info_t _ch_info[CHANNELS_NUM];
 
         speaker_config_t _cfg;
         volatile uint8_t _master_volume = 64;
@@ -291,6 +297,7 @@ namespace HAL
         std::atomic<uint16_t> _play_channel_bits = {0};
 
         TaskHandle_t _task_handle = nullptr;
+        volatile SemaphoreHandle_t _task_semaphore = nullptr;
 
         i2s_chan_handle_t _tx_chan = nullptr;
 
@@ -324,9 +331,15 @@ namespace HAL
         bool _set_next_wav(size_t ch, const wav_info_t& wav);
 
         /**
+         * @brief Switch to next queued wav for channel
+         * @param ch Channel index
+         * @return true if channel has data to play, false if channel is done
+         */
+        bool _get_next_wav(size_t ch);
+        /**
          * @brief Mix audio channels
          */
-        void _mix_channels(int16_t* output, size_t samples);
+        size_t _mix_channels(size_t samples);
 
         /**
          * @brief Initialize cardputer adv

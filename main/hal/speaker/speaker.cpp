@@ -3,6 +3,7 @@
  * @brief Speaker implementation for ESP32S3 using ESP-IDF I2S driver
  */
 #include "speaker.h"
+#include "hal.h"
 #include <cstring>
 #include <algorithm>
 #include <driver/i2c_master.h>
@@ -16,7 +17,7 @@ namespace HAL
     const uint8_t Speaker::_default_tone_wav[16] = {
         0x80, 0xB0, 0xDA, 0xF6, 0xFF, 0xF6, 0xDA, 0xB0, 0x80, 0x50, 0x26, 0x0A, 0x00, 0x0A, 0x26, 0x50};
 
-    Speaker::Speaker(BoardType board_type) : _board_type(board_type), _bus_handle(nullptr), _dev_handle(nullptr) {}
+    Speaker::Speaker(HAL::Hal* hal) : _hal(hal), _board_type(hal->board_type()), _dev_handle(nullptr) { begin(); }
 
     Speaker::~Speaker() { end(); }
 
@@ -52,6 +53,11 @@ namespace HAL
             return false;
         }
 
+        if (_task_semaphore == nullptr)
+        {
+            _task_semaphore = xSemaphoreCreateBinary();
+        }
+
         // Create speaker task (no semaphore needed, we use task notifications)
         BaseType_t result;
         if (_cfg.task_pinned_core < 2)
@@ -69,7 +75,7 @@ namespace HAL
             result = xTaskCreate(spk_task, "speaker_task", 2048, this, _cfg.task_priority, &_task_handle);
         }
 
-        if (result != pdPASS)
+        if (result != pdPASS || _task_semaphore == nullptr)
         {
             return false;
         }
@@ -122,6 +128,12 @@ namespace HAL
         case BoardType::AUTO_DETECT:
             break;
         }
+        // Delete task semaphore
+        if (_task_semaphore)
+        {
+            vSemaphoreDelete(_task_semaphore);
+            _task_semaphore = nullptr;
+        }
     }
 
     bool Speaker::_init_cardputer_adv(bool enabled)
@@ -130,7 +142,15 @@ namespace HAL
         {
             uint8_t value[2];
         };
-
+        // const uint8_t REG_RESET = 0x00;
+        // const uint8_t REG_CLOCK_MANAGER = 0x01;
+        // const uint8_t REG_CLOCK_MANAGER_MCLK = 0x02;
+        // const uint8_t REG_CLOCK_MANAGER_MULT_PRE = 0x03;
+        // const uint8_t REG_SYSTEM = 0x0D;
+        // const uint8_t REG_SYSTEM_POWER_UP_ANALOG = 0x12;
+        // const uint8_t REG_SYSTEM_POWER_UP_DAC = 0x13;
+        // const uint8_t REG_SYSTEM_ENABLE_OUTPUT_TO_HP = 0x14;
+        // const uint8_t REG_DAC = 0x32;
         const RegValue enable_data[] = {
             {0x00, 0x80}, // 0x00 RESET/  CSM POWER ON
             {0x01, 0xB5}, // 0x01 CLOCK_MANAGER/ MCLK=BCLK
@@ -142,23 +162,11 @@ namespace HAL
             {0x37, 0x08}, // 0x37 DAC/ Bypass DAC equalizer - NOT default
         };
 
-        // get i2c master bus handle
-        _bus_handle = nullptr;
-        esp_err_t ret = i2c_master_get_bus_handle(SPEAKER_I2C_PORT, &_bus_handle);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Failed to get I2C master bus handle");
-            return false;
-        }
         // add or remove device to bus
+        esp_err_t ret;
         if (enabled)
         {
-            i2c_device_config_t dev_cfg = {
-                .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-                .device_address = SPEAKER_I2C_ADDR0,
-                .scl_speed_hz = SPEAKER_I2C_FREQ_HZ,
-            };
-            ret = i2c_master_bus_add_device(_bus_handle, &dev_cfg, &_dev_handle);
+            ret = _hal->i2c()->add_device(SPEAKER_I2C_ADDR, SPEAKER_I2C_FREQ_HZ, nullptr, &_dev_handle);
             if (ret != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to add device to I2C bus");
@@ -166,6 +174,7 @@ namespace HAL
             }
             for (auto& chunk : enable_data)
             {
+                ESP_LOGD(TAG, "Writing to I2C device: 0x%02X = 0x%02X", chunk.value[0], chunk.value[1]);
                 ret = i2c_master_transmit(_dev_handle, chunk.value, 2, SPEAKER_I2C_TIMEOUT_MS);
                 if (ret != ESP_OK)
                 {
@@ -176,7 +185,7 @@ namespace HAL
         }
         else
         {
-            ret = i2c_master_bus_rm_device(_dev_handle);
+            ret = hal()->i2c()->remove_device(_dev_handle);
             if (ret != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to remove device from I2C bus");
@@ -252,7 +261,7 @@ namespace HAL
 
     size_t Speaker::isPlaying(uint8_t channel) const volatile
     {
-        if (channel >= sound_channel_max)
+        if (channel >= CHANNELS_NUM)
         {
             return 0;
         }
@@ -263,7 +272,7 @@ namespace HAL
 
     void Speaker::setAllChannelVolume(uint8_t volume)
     {
-        for (size_t ch = 0; ch < sound_channel_max; ++ch)
+        for (size_t ch = 0; ch < CHANNELS_NUM; ++ch)
         {
             _ch_info[ch].volume = volume;
         }
@@ -271,20 +280,17 @@ namespace HAL
 
     void Speaker::setChannelVolume(uint8_t channel, uint8_t volume)
     {
-        if (channel < sound_channel_max)
+        if (channel < CHANNELS_NUM)
         {
             _ch_info[channel].volume = volume;
         }
     }
 
-    uint8_t Speaker::getChannelVolume(uint8_t channel) const
-    {
-        return (channel < sound_channel_max) ? _ch_info[channel].volume : 0;
-    }
+    uint8_t Speaker::getChannelVolume(uint8_t channel) const { return (channel < CHANNELS_NUM) ? _ch_info[channel].volume : 0; }
 
     void Speaker::stop(void)
     {
-        for (size_t ch = 0; ch < sound_channel_max; ++ch)
+        for (size_t ch = 0; ch < CHANNELS_NUM; ++ch)
         {
             stop(ch);
         }
@@ -292,7 +298,7 @@ namespace HAL
 
     void Speaker::stop(uint8_t channel)
     {
-        if (channel < sound_channel_max)
+        if (channel < CHANNELS_NUM)
         {
             _ch_info[channel].wavinfo[0].clear();
             _ch_info[channel].wavinfo[1].clear();
@@ -482,7 +488,7 @@ namespace HAL
         // Find available channel
         if (channel < 0)
         {
-            for (size_t ch = 0; ch < sound_channel_max; ++ch)
+            for (size_t ch = 0; ch < CHANNELS_NUM; ++ch)
             {
                 if (_ch_info[ch].wavinfo[0].repeat == 0)
                 {
@@ -496,7 +502,7 @@ namespace HAL
             }
         }
 
-        if (channel >= sound_channel_max)
+        if (channel >= CHANNELS_NUM)
         {
             return false;
         }
@@ -518,147 +524,131 @@ namespace HAL
 
     bool Speaker::_set_next_wav(size_t ch, const wav_info_t& wav)
     {
-        if (ch >= sound_channel_max)
+        auto ch_info = &_ch_info[ch];
+        uint8_t chmask = 1 << ch;
+        if (!wav.stop_current)
         {
-            return false;
-        }
-
-        auto& ch_info = _ch_info[ch];
-
-        if (wav.stop_current || ch_info.wavinfo[0].repeat == 0)
-        {
-            // Stop current and set new
-            ch_info.wavinfo[0] = wav;
-            ch_info.wavinfo[1].clear();
-            if (!wav.no_clear_index)
+            // waiting for the next wave slot to be free
+            while ((_play_channel_bits.load() & chmask) && (ch_info->next()->repeat))
             {
-                ch_info.index = 0;
-                ch_info.diff = 0; // Reset diff accumulator
-            }
-            ch_info.flip = false;
-
-            // Update play bits
-            if (wav.repeat > 0)
-            {
-                _play_channel_bits.fetch_or(1 << ch);
+                // if current wav is infinite repeat, return false, new wav will never play
+                if (ch_info->wav()->repeat == ~0u)
+                {
+                    return false;
+                }
+                // wait current wav to finish to load next wav for free buffer
+                xSemaphoreTake(_task_semaphore, portMAX_DELAY);
             }
         }
-        else if (ch_info.wavinfo[1].repeat == 0)
-        {
-            // Queue next
-            ch_info.wavinfo[1] = wav;
-        }
-        else
-        {
-            // Queue full
-            return false;
-        }
+        // load new wav to next buffer
+        *(ch_info->next()) = wav;
 
-        // Wake up task via task notification
-        if (_task_handle)
-        {
-            xTaskNotifyGive(_task_handle);
-        }
-
+        // set channel playing bit
+        _play_channel_bits.fetch_or(chmask);
+        // wake up playback task to load next wav
+        xTaskNotifyGive(_task_handle);
         return true;
     }
 
-    void Speaker::_mix_channels(int16_t* output, size_t samples)
+    bool Speaker::_get_next_wav(size_t ch)
     {
-        uint16_t playing_bits = _play_channel_bits.load();
-        if (playing_bits == 0)
+        auto ch_info = &_ch_info[ch];
+        bool clear_idx = (ch_info->next()->repeat == 0 || !ch_info->next()->no_clear_index ||
+                          (ch_info->next()->data != ch_info->wav()->data));
+        ch_info->wav()->clear();
+        // flip channel buffers and release the semaphore to load next wav
+        ch_info->flip = !ch_info->flip;
+        xSemaphoreGive(_task_semaphore);
+
+        if (clear_idx)
         {
-            memset(output, 0, samples * sizeof(int16_t) * (_cfg.stereo ? 2 : 1));
-            return;
+            ch_info->index = 0;
+            if (ch_info->wav()->repeat == 0)
+            {
+                // Not playing anymore
+                _play_channel_bits.fetch_and(~(1 << ch));
+                ch_info->diff = 0;
+                ch_info->index = 0;
+                return false;
+            }
         }
+        return true;
+    }
 
+    size_t Speaker::_mix_channels(size_t samples)
+    {
+        // using same mix buffer for output
+        int16_t* output = (int16_t*)mix_buf;
         const bool out_stereo = _cfg.stereo;
-        const size_t output_len = samples * (out_stereo ? 2 : 1);
-        const int32_t spk_rate_x256 = _cfg.sample_rate << 8;
+        const int32_t out_rate_x256 = _cfg.sample_rate * 256;
 
-        // Allocate int32 mixing buffer for better precision
-        int32_t* mix_buf = (int32_t*)alloca(output_len * sizeof(int32_t));
-        memset(mix_buf, 0, output_len * sizeof(int32_t));
+        memset(mix_buf, 0, samples * sizeof(int32_t));
+        // actual mixed sampless
+        size_t mix_samples = 0;
 
         // Calculate base volume: magnification * (master_volume^2) / sample_rate / 2^28
         const float base_volume =
-            (_cfg.magnification << out_stereo) * (_master_volume * _master_volume) / (float)spk_rate_x256 / (1 << 28);
+            (_cfg.magnification << out_stereo) * (_master_volume * _master_volume) / (float)out_rate_x256 / (1 << 28);
 
         // Mix each active channel
-        for (size_t ch = 0; ch < sound_channel_max; ++ch)
+        for (size_t ch = 0; ch < CHANNELS_NUM; ++ch)
         {
-            if (!(playing_bits & (1 << ch)))
+            if (!(_play_channel_bits.load() & (1 << ch)))
                 continue;
 
-            auto& ch_info = _ch_info[ch];
-            wav_info_t* wav = &ch_info.wavinfo[!ch_info.flip];
-            wav_info_t* next = &ch_info.wavinfo[ch_info.flip];
+            auto ch_info = &_ch_info[ch];
 
             // Switch to queued sound if current finished or interrupted
-            if (wav->repeat == 0 || next->stop_current)
+            if (ch_info->wav()->repeat == 0 || ch_info->next()->stop_current)
             {
-                bool reset_position = (next->repeat == 0 || !next->no_clear_index || next->data != wav->data);
-                wav->clear();
-                ch_info.flip = !ch_info.flip;
-                std::swap(wav, next);
-
-                if (reset_position)
-                {
-                    ch_info.index = 0;
-                    ch_info.diff = 0;
-                    if (wav->repeat == 0)
-                    {
-                        _play_channel_bits.fetch_and(~(1 << ch));
-                        continue;
-                    }
-                }
-            }
-
-            if (wav->repeat == 0)
-            {
-                _play_channel_bits.fetch_and(~(1 << ch));
-                continue;
+                if (!_get_next_wav(ch))
+                    continue;
             }
 
             // Calculate channel volume (squared for perceptual linearity, boost 8-bit)
-            int32_t vol_sq = ch_info.volume * ch_info.volume;
-            if (!wav->is_16bit)
+            int32_t vol_sq = ch_info->volume * ch_info->volume;
+            if (!ch_info->wav()->is_16bit)
                 vol_sq <<= 8;
             const float ch_volume = base_volume * vol_sq;
 
-            const bool in_stereo = wav->is_stereo;
-            const int32_t in_rate = wav->sample_rate_x256;
-            float* curr_sample = ch_info.liner_buf[0]; // Current interpolated sample
-            float* prev_sample = ch_info.liner_buf[1]; // Previous sample for interpolation
+            const bool in_stereo = ch_info->wav()->is_stereo;
+            const int32_t in_rate_x256 = ch_info->wav()->sample_rate_x256;
+            float* curr_sample = ch_info->liner_buf[0]; // Current interpolated sample
+            float* prev_sample = ch_info->liner_buf[1]; // Previous sample for interpolation
 
-            int diff = ch_info.diff;        // Sample rate converter accumulator
-            size_t src_idx = ch_info.index; // Source audio position
-            size_t dst_idx = 0;             // Destination buffer position
+            // int diff = ch_info->diff; // Sample rate converter accumulator
+            // size_t in_idx = ch_info->index; // Source audio position
+            size_t out_idx = 0; // Destination buffer position
 
             // Mix loop: read source samples and resample to output rate
             do
             {
                 // Read new source samples when accumulator is non-negative
-                while (diff >= 0)
+                do
                 {
                     // Handle loop wrap-around
-                    if (src_idx >= wav->length)
+                    if (ch_info->index >= ch_info->wav()->length)
                     {
-                        src_idx -= wav->length;
-                        if (wav->repeat != ~0u && --wav->repeat == 0)
-                            goto end_channel_mix;
+                        ch_info->index -= ch_info->wav()->length;
+                        // not infinite repeat? decrement and check if repeat count is 0
+                        if (ch_info->wav()->repeat != ~0u && --ch_info->wav()->repeat == 0)
+                        {
+                            // Save state before switching
+                            if (!_get_next_wav(ch))
+                                goto no_more_samples;
+                        }
                     }
 
                     // Read sample (L and R channels)
                     int32_t left, right;
-                    if (wav->is_16bit)
+                    if (ch_info->wav()->is_16bit)
                     {
-                        auto data16 = (const int16_t*)wav->data;
-                        left = data16[src_idx];
-                        right = data16[src_idx + in_stereo];
-                        src_idx += 1 + in_stereo;
+                        auto data16 = (const int16_t*)ch_info->wav()->data;
+                        left = data16[ch_info->index];
+                        right = data16[ch_info->index + in_stereo];
+                        ch_info->index += 1 + in_stereo;
 
-                        if (!wav->is_signed)
+                        if (!ch_info->wav()->is_signed)
                         {
                             left = (left & 0xFFFF) + INT16_MIN;
                             right = (right & 0xFFFF) + INT16_MIN;
@@ -666,12 +656,12 @@ namespace HAL
                     }
                     else
                     {
-                        auto data8 = (const uint8_t*)wav->data;
-                        left = data8[src_idx];
-                        right = data8[src_idx + in_stereo];
-                        src_idx += 1 + in_stereo;
+                        auto data8 = (const uint8_t*)ch_info->wav()->data;
+                        left = data8[ch_info->index];
+                        right = data8[ch_info->index + in_stereo];
+                        ch_info->index += 1 + in_stereo;
 
-                        if (wav->is_signed)
+                        if (ch_info->wav()->is_signed)
                         {
                             left = (int8_t)left;
                             right = (int8_t)right;
@@ -696,62 +686,67 @@ namespace HAL
                     }
                     curr_sample[0] = left * ch_volume;
 
-                    diff -= spk_rate_x256; // Consume one input sample
-                }
+                    ch_info->diff -= out_rate_x256; // reduce diff by output rate, then we will add input
+                } while (ch_info->diff >= 0);
                 // Linear interpolation: generate output samples between prev and curr
                 float lerp_left = curr_sample[0];
                 float delta_left = lerp_left - prev_sample[0];
-                float start_left = lerp_left * spk_rate_x256 + delta_left * diff;
-                float step_left = delta_left * in_rate;
+                float start_left = lerp_left * out_rate_x256 + delta_left * ch_info->diff;
+                float step_left = delta_left * in_rate_x256;
 
                 if (out_stereo)
                 {
                     float lerp_right = curr_sample[1];
                     float delta_right = lerp_right - prev_sample[1];
-                    float start_right = lerp_right * spk_rate_x256 + delta_right * diff;
-                    float step_right = delta_right * in_rate;
+                    float start_right = lerp_right * out_rate_x256 + delta_right * ch_info->diff;
+                    float step_right = delta_right * in_rate_x256;
 
                     // Write stereo samples
                     do
                     {
-                        mix_buf[dst_idx++] += (int32_t)start_left;
-                        mix_buf[dst_idx++] += (int32_t)start_right;
+                        mix_buf[out_idx++] += (int32_t)start_left;
+                        mix_buf[out_idx++] += (int32_t)start_right;
                         start_left += step_left;
                         start_right += step_right;
-                        diff += in_rate;
-                    } while (dst_idx < output_len && diff < 0);
+                        ch_info->diff += in_rate_x256; // now increasing diff
+                    } while (out_idx < samples && ch_info->diff < 0);
                 }
                 else
                 {
                     // Write mono samples
                     do
                     {
-                        mix_buf[dst_idx++] += (int32_t)start_left;
+                        mix_buf[out_idx++] += (int32_t)start_left;
                         start_left += step_left;
-                        diff += in_rate;
-                    } while (dst_idx < output_len && diff < 0);
+                        ch_info->diff += in_rate_x256;
+                    } while (out_idx < samples && ch_info->diff < 0);
                 }
-            } while (dst_idx < output_len);
-
-        end_channel_mix:
-            ch_info.diff = diff;
-            ch_info.index = src_idx;
+                // get max channel output samples
+                if (out_idx > mix_samples)
+                {
+                    mix_samples = out_idx;
+                }
+            } while (out_idx < samples);
+        no_more_samples:
+            // continue to next channel
         }
-
         // Convert mixed int32 buffer to int16 output with clamping
-        for (size_t i = 0; i < output_len; ++i)
+        for (size_t i = 0; i < mix_samples; i++)
         {
+            // scale down to 256
             int32_t val = mix_buf[i] >> 8;
             output[i] = (val < INT16_MIN) ? INT16_MIN : (val > INT16_MAX) ? INT16_MAX : (int16_t)val;
         }
+        return mix_samples;
     }
 
     void Speaker::spk_task(void* args)
     {
         Speaker* self = static_cast<Speaker*>(args);
-        const size_t samples_per_frame = 256;
-        const size_t buffer_size = samples_per_frame * (self->_cfg.stereo ? 2 : 1);
-        int16_t* buffer = new int16_t[buffer_size];
+        const size_t samples_per_frame = self->_cfg.dma_buf_len;
+        const size_t buffer_size = samples_per_frame << self->_cfg.stereo;
+        // Allocate int32 mixing buffer for better precision
+        self->mix_buf = new int32_t[buffer_size];
 
         uint8_t buf_cnt = 0;
         bool flg_nodata = false;
@@ -765,6 +760,7 @@ namespace HAL
                 {
                     // Decrement buffer count and wait
                     --buf_cnt;
+                    // wait time = 1ms + frame playback time
                     uint32_t wait_msec = 1 + (samples_per_frame * 1000 / self->_cfg.sample_rate);
                     flg_nodata = (0 == ulTaskNotifyTake(pdFALSE, pdMS_TO_TICKS(wait_msec)));
                 }
@@ -772,12 +768,16 @@ namespace HAL
                 if (flg_nodata && 0 == buf_cnt)
                 {
                     // Fill all DMA buffers with silence
-                    memset(buffer, 0, buffer_size * sizeof(int16_t));
+                    memset(self->mix_buf, 0, buffer_size * sizeof(int32_t));
                     size_t retry = self->_cfg.dma_buf_count + 1;
                     while (!ulTaskNotifyTake(pdTRUE, 0) && --retry)
                     {
                         size_t bytes_written;
-                        i2s_channel_write(self->_tx_chan, buffer, buffer_size * sizeof(int16_t), &bytes_written, portMAX_DELAY);
+                        i2s_channel_write(self->_tx_chan,
+                                          self->mix_buf,
+                                          buffer_size * sizeof(int32_t),
+                                          &bytes_written,
+                                          portMAX_DELAY);
                     }
 
                     if (!retry)
@@ -797,26 +797,45 @@ namespace HAL
             }
 
             flg_nodata = true;
+            size_t mix_samples = 0;
 
             if (self->_play_channel_bits.load() == 0)
             {
                 // No channels playing, send silence
-                memset(buffer, 0, buffer_size * sizeof(int16_t));
+                memset(self->mix_buf, 0, buffer_size * sizeof(int32_t));
             }
             else
             {
                 // Mix channels
-                self->_mix_channels(buffer, samples_per_frame);
-                flg_nodata = false; // We have data
+                mix_samples = self->_mix_channels(samples_per_frame);
+                flg_nodata = mix_samples == 0;
             }
-
-            // Write to I2S - this blocks until buffer space available
-            size_t bytes_written = 0;
-            i2s_channel_write(self->_tx_chan, buffer, buffer_size * sizeof(int16_t), &bytes_written, portMAX_DELAY);
 
             // Track buffer count
             if (!flg_nodata)
             {
+                // Write to I2S - this blocks until buffer space available
+                size_t bytes_to_send = mix_samples * sizeof(int16_t);
+                size_t bytes_total = 0;
+                do
+                {
+                    size_t bytes_written = 0;
+                    if (i2s_channel_write(self->_tx_chan,
+                                          self->mix_buf + bytes_total,
+                                          bytes_to_send - bytes_total,
+                                          &bytes_written,
+                                          portMAX_DELAY) == ESP_OK)
+                    {
+                        bytes_total += bytes_written;
+                    }
+                    else
+                    {
+                        // error, wait
+                        ESP_LOGE(TAG, "I2S write error");
+                        break;
+                    }
+                } while (bytes_total < bytes_to_send);
+
                 if (++buf_cnt >= self->_cfg.dma_buf_count)
                 {
                     buf_cnt = self->_cfg.dma_buf_count;
@@ -824,7 +843,7 @@ namespace HAL
             }
         }
 
-        delete[] buffer;
+        delete[] self->mix_buf;
         vTaskDelete(nullptr);
     }
 
