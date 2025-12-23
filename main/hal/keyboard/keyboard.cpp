@@ -12,7 +12,7 @@
 #include "keyboard_reader_iomatrix.h"
 #include "keyboard_reader_tca8418.h"
 #include <driver/gpio.h>
-#include "apps/utils/common_define.h"
+#include "common_define.h"
 #include "esp_log.h"
 
 #define TAG "KEYBOARD"
@@ -27,7 +27,7 @@ void Keyboard::init()
         ESP_LOGI(TAG, "Auto-detecting board type...");
 
         // Try to initialize TCA8418 keyboard reader
-        auto tca8418_reader = std::make_unique<TCA8418KeyboardReader>();
+        auto tca8418_reader = std::make_unique<TCA8418KeyboardReader>(_hal);
         tca8418_reader->init();
 
         if (tca8418_reader->isInitialized())
@@ -47,7 +47,7 @@ void Keyboard::init()
     else if (_board_type == HAL::BoardType::CARDPUTER_ADV)
     {
         ESP_LOGI(TAG, "Board type forced to CARDPUTER_ADV");
-        _keyboard_reader = std::make_unique<TCA8418KeyboardReader>(KEYBOARD_TCA8418_INT_PIN);
+        _keyboard_reader = std::make_unique<TCA8418KeyboardReader>(_hal, KEYBOARD_TCA8418_INT_PIN);
         _keyboard_reader->init();
     }
     else

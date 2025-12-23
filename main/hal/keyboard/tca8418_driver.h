@@ -8,6 +8,7 @@
  */
 #pragma once
 #include <driver/i2c_master.h>
+#include "hal.h"
 #include <stdint.h>
 
 namespace KEYBOARD
@@ -61,24 +62,32 @@ namespace KEYBOARD
 #define TCA8418_REG_GPIO_PULL_3 0x2E
 
 // CFG Register bit definitions
-#define TCA8418_REG_CFG_AI 0x80           // Auto-increment for read/write
-#define TCA8418_REG_CFG_GPI_E_CGF 0x40    // Event mode config
-#define TCA8418_REG_CFG_OVR_FLOW_M 0x20   // Overflow mode enable
-#define TCA8418_REG_CFG_INT_CFG 0x10      // Interrupt config
-#define TCA8418_REG_CFG_OVR_FLOW_IEN 0x08 // Overflow interrupt enable
-#define TCA8418_REG_CFG_K_LCK_IEN 0x04    // Keypad lock interrupt enable
-#define TCA8418_REG_CFG_GPI_IEN 0x02      // GPI interrupt enable
-#define TCA8418_REG_CFG_KE_IEN 0x01       // Key events interrupt enable
+#define TCA8418_REG_CFG_AI (1 << 7)           // Auto-increment for read/write
+#define TCA8418_REG_CFG_GPI_E_CGF (1 << 6)    // Event mode config
+#define TCA8418_REG_CFG_OVR_FLOW_M (1 << 5)   // Overflow mode enable
+#define TCA8418_REG_CFG_INT_CFG (1 << 4)      // Interrupt config
+#define TCA8418_REG_CFG_OVR_FLOW_IEN (1 << 3) // Overflow interrupt enable
+#define TCA8418_REG_CFG_K_LCK_IEN (1 << 2)    // Keypad lock interrupt enable
+#define TCA8418_REG_CFG_GPI_IEN (1 << 1)      // GPI interrupt enable
+#define TCA8418_REG_CFG_KE_IEN (1 << 0)       // Key events interrupt enable
+
+// Interrupt status bit definitions
+#define TCA8418_REG_INT_STAT_CAD_INT (1 << 4)
+#define TCA8418_REG_INT_STAT_OVR_FLOW_INT (1 << 3)
+#define TCA8418_REG_INT_STAT_K_LCK_INT (1 << 2)
+#define TCA8418_REG_INT_STAT_GPI_INT (1 << 1)
+#define TCA8418_REG_INT_STAT_K_INT (1 << 0)
 
 // Default I2C address
 #define TCA8418_I2C_ADDR 0x34
+#define TCA8418_RETRY_COUNT 5
     /**                                                                                                                   \
      * @brief TCA8418 I2C Keyboard Controller Driver                                                                      \
      */
     class tca8418_driver
     {
     public:
-        tca8418_driver(i2c_master_bus_handle_t bus_handle, uint8_t addr = TCA8418_I2C_ADDR);
+        tca8418_driver(HAL::Hal* hal, uint8_t addr = TCA8418_I2C_ADDR);
         ~tca8418_driver();
 
         /**
@@ -157,8 +166,11 @@ namespace KEYBOARD
          */
         bool read_register(uint8_t reg, uint8_t* value);
 
+        inline HAL::Hal* hal() { return _hal; }
+
     private:
-        i2c_master_bus_handle_t _bus_handle;
+        HAL::Hal* _hal;
+        // i2c_master_bus_handle_t _bus_handle;
         i2c_master_dev_handle_t _dev_handle;
         uint8_t _i2c_addr;
         bool _initialized;

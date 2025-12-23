@@ -11,23 +11,16 @@
 #include <string.h>
 
 #define TAG "TCA8418"
-#define TCA8418_TIMEOUT_MS 1000
+#define TCA8418_TIMEOUT_MS 100
 #define TCA8418_I2C_FREQ_HZ 400000
 
 namespace KEYBOARD
 {
-    tca8418_driver::tca8418_driver(i2c_master_bus_handle_t bus_handle, uint8_t addr)
-        : _bus_handle(bus_handle), _dev_handle(nullptr), _i2c_addr(addr), _initialized(false)
+    tca8418_driver::tca8418_driver(HAL::Hal* hal, uint8_t addr)
+        : _hal(hal), _dev_handle(nullptr), _i2c_addr(addr), _initialized(false)
     {
-        // Create device configuration
-        i2c_device_config_t dev_cfg = {
-            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-            .device_address = addr,
-            .scl_speed_hz = TCA8418_I2C_FREQ_HZ, // 400kHz
-        };
-
-        // Add device to bus
-        esp_err_t ret = i2c_master_bus_add_device(_bus_handle, &dev_cfg, &_dev_handle);
+        ESP_LOGI(TAG, "Constructor, hal=%p", hal);
+        esp_err_t ret = _hal->i2c()->add_device(_i2c_addr, TCA8418_I2C_FREQ_HZ, nullptr, &_dev_handle);
         if (ret != ESP_OK)
         {
             ESP_LOGE(TAG, "Failed to add device to I2C bus: %s", esp_err_to_name(ret));
@@ -39,10 +32,11 @@ namespace KEYBOARD
     {
         if (_dev_handle != nullptr)
         {
-            esp_err_t ret = i2c_master_bus_rm_device(_dev_handle);
+            ESP_LOGI(TAG, "Removing TCA8418 device from I2C bus");
+            esp_err_t ret = _hal->i2c()->remove_device(_dev_handle);
             if (ret != ESP_OK)
             {
-                ESP_LOGE(TAG, "Failed to remove TCA8418 device from I2C bus: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "Failed to remove TCA8418 device from I2C bus: 0x%x", ret);
             }
             _dev_handle = nullptr;
         }
@@ -56,16 +50,32 @@ namespace KEYBOARD
             return false;
         }
 
-        uint8_t write_buf[2] = {reg, value};
-
-        esp_err_t ret = i2c_master_transmit(_dev_handle, write_buf, 2, TCA8418_TIMEOUT_MS);
-
-        if (ret != ESP_OK)
+        if (_hal->i2c()->wait_all_done(1000) != ESP_OK)
         {
-            ESP_LOGE(TAG, "Failed to write register 0x%02X: %s", reg, esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to wait for I2C bus to be idle");
             return false;
         }
-        return true;
+        uint8_t write_buf[2] = {reg, value};
+
+        esp_err_t ret;
+        int retries = TCA8418_RETRY_COUNT;
+        do
+        {
+            ret = i2c_master_transmit(_dev_handle, write_buf, 2, TCA8418_TIMEOUT_MS);
+            if (ret == ESP_OK)
+                break;
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            retries--;
+        } while (retries > 0);
+        if (ret == ESP_OK)
+        {
+            ESP_LOGD(TAG, "write_register: 0x%02X = 0x%02X", reg, value);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to write register 0x%02X: 0x%x", reg, ret);
+        }
+        return ret == ESP_OK;
     }
 
     bool tca8418_driver::read_register(uint8_t reg, uint8_t* value)
@@ -81,15 +91,31 @@ namespace KEYBOARD
             ESP_LOGE(TAG, "Value pointer is null");
             return false;
         }
-
-        esp_err_t ret = i2c_master_transmit_receive(_dev_handle, &reg, 1, value, 1, TCA8418_TIMEOUT_MS);
-
-        if (ret != ESP_OK)
+        // wait_all_done
+        if (_hal->i2c()->wait_all_done(1000) != ESP_OK)
         {
-            ESP_LOGE(TAG, "Failed to read register 0x%02X: %s", reg, esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to wait for I2C bus to be idle");
             return false;
         }
-        return true;
+        esp_err_t ret;
+        int retries = TCA8418_RETRY_COUNT;
+        do
+        {
+            ret = i2c_master_transmit_receive(_dev_handle, &reg, 1, value, 1, TCA8418_TIMEOUT_MS);
+            if (ret == ESP_OK)
+                break;
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            retries--;
+        } while (retries > 0);
+        if (ret == ESP_OK)
+        {
+            ESP_LOGD(TAG, "read_register: 0x%02X = 0x%02X", reg, *value);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to read register 0x%02X: 0x%x", reg, ret);
+        }
+        return ret == ESP_OK;
     }
 
     bool tca8418_driver::begin()

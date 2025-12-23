@@ -22,6 +22,11 @@
 // Interrupt pin for TCA8418
 #define KEYBOARD_TCA8418_INT_PIN 11
 
+namespace HAL
+{
+    class Hal;
+}
+
 namespace KEYBOARD
 {
     /**
@@ -33,14 +38,16 @@ namespace KEYBOARD
     class TCA8418KeyboardReader : public KeyboardReader
     {
     public:
-        TCA8418KeyboardReader(int interrupt_pin = KEYBOARD_TCA8418_INT_PIN);
+        TCA8418KeyboardReader(HAL::Hal* hal, int interrupt_pin = KEYBOARD_TCA8418_INT_PIN);
         virtual ~TCA8418KeyboardReader();
 
         void init() override;
         void update() override;
         bool isInitialized() const { return _init_success; }
+        inline HAL::Hal* hal() { return _hal; }
 
     private:
+        HAL::Hal* _hal;
         struct KeyEventRaw_t
         {
             bool state; // true = pressed, false = released
@@ -48,10 +55,11 @@ namespace KEYBOARD
             uint8_t col;
         };
 
-        std::unique_ptr<tca8418_driver> _tca8418;
+        // std::unique_ptr<tca8418_driver> _tca8418;
+        tca8418_driver* _tca8418;
         volatile bool _isr_flag;
         int _interrupt_pin;
-        i2c_master_bus_handle_t _bus_handle;
+        // i2c_master_bus_handle_t _bus_handle;
         KeyEventRaw_t _key_event_raw_buffer;
         bool _init_success;
 

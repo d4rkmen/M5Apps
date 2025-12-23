@@ -14,13 +14,14 @@
 
 namespace KEYBOARD
 {
-    TCA8418KeyboardReader::TCA8418KeyboardReader(int interrupt_pin)
-        : _isr_flag(false), _interrupt_pin(interrupt_pin), _bus_handle(nullptr), _init_success(false)
+    TCA8418KeyboardReader::TCA8418KeyboardReader(HAL::Hal* hal, int interrupt_pin)
+        : _hal(hal), _isr_flag(false), _interrupt_pin(interrupt_pin), _init_success(false)
     {
     }
 
     TCA8418KeyboardReader::~TCA8418KeyboardReader()
     {
+        ESP_LOGI(TAG, "Destructor, init_success: %d", _init_success);
         if (!_init_success)
         {
             return;
@@ -32,6 +33,7 @@ namespace KEYBOARD
         }
 
         // Clean up I2C bus handle
+#if 0        
         if (_bus_handle != nullptr)
         {
             esp_err_t ret = i2c_del_master_bus(_bus_handle);
@@ -40,6 +42,12 @@ namespace KEYBOARD
                 ESP_LOGE(TAG, "Failed to delete I2C master bus: %s", esp_err_to_name(ret));
             }
             _bus_handle = nullptr;
+        }
+#endif
+        if (_tca8418 != nullptr)
+        {
+            delete _tca8418;
+            _tca8418 = nullptr;
         }
     }
 
@@ -51,6 +59,7 @@ namespace KEYBOARD
 
     void TCA8418KeyboardReader::init()
     {
+#if 0        
         // Create I2C master bus
         i2c_master_bus_config_t bus_config = {};
         bus_config.i2c_port = KEYBOARD_I2C_PORT;
@@ -67,9 +76,15 @@ namespace KEYBOARD
             _init_success = false;
             return;
         }
-
+#endif
         // Initialize TCA8418 driver
-        _tca8418 = std::make_unique<tca8418_driver>(_bus_handle);
+        // _tca8418 = std::make_unique<tca8418_driver>(_hal);
+        _tca8418 = new tca8418_driver(_hal);
+        if (!_tca8418)
+        {
+            ESP_LOGI(TAG, "Failed to create TCO8418 driver");
+            return;
+        }
 
         if (!_tca8418->begin())
         {
@@ -89,6 +104,7 @@ namespace KEYBOARD
             gpio_set_intr_type((gpio_num_t)_interrupt_pin, GPIO_INTR_ANYEDGE);
             gpio_install_isr_service(0);
             gpio_isr_handler_add((gpio_num_t)_interrupt_pin, gpio_isr_handler, this);
+            ESP_LOGI(TAG, "Interrupt pin %d installed", _interrupt_pin);
         }
 
         // Enable interrupts
@@ -103,35 +119,34 @@ namespace KEYBOARD
         {
             return;
         }
-
-        // Get the key event
-        uint8_t event_raw = _tca8418->get_event();
-
-        // Skip if no event
-        if (event_raw == 0)
-        {
-            _isr_flag = false;
+        uint8_t int_stat = 0;
+        if (!_tca8418->read_register(TCA8418_REG_INT_STAT, &int_stat))
             return;
-        }
-
-        _key_event_raw_buffer = getKeyEventRaw(event_raw);
-
-        // Try to clear the IRQ flag
-        // If there are pending events it is not cleared
-        uint8_t int_stat;
-        _tca8418->write_register(TCA8418_REG_INT_STAT, 1);
-        _tca8418->read_register(TCA8418_REG_INT_STAT, &int_stat);
-
-        if ((int_stat & 0x01) == 0)
+        // Check if key event interrupt is set
+        if (int_stat & TCA8418_REG_INT_STAT_K_INT)
         {
-            _isr_flag = false;
+            // get number of events
+            while (_tca8418->available() > 0)
+            {
+                // Get the key event
+                uint8_t event_raw = _tca8418->get_event();
+
+                // Skip if no event
+                if (event_raw == 0)
+                    break;
+
+                _key_event_raw_buffer = getKeyEventRaw(event_raw);
+
+                // Remap to match CARDPUTER coordinate system
+                remap(_key_event_raw_buffer);
+
+                // Update the key list
+                updateKeyList(_key_event_raw_buffer);
+            }
+            // Clear the IRQ flag
+            _tca8418->write_register(TCA8418_REG_INT_STAT, TCA8418_REG_INT_STAT_K_INT);
         }
-
-        // Remap to match CARDPUTER coordinate system
-        remap(_key_event_raw_buffer);
-
-        // Update the key list
-        updateKeyList(_key_event_raw_buffer);
+        _isr_flag = false;
     }
 
     TCA8418KeyboardReader::KeyEventRaw_t TCA8418KeyboardReader::getKeyEventRaw(const uint8_t& eventRaw)

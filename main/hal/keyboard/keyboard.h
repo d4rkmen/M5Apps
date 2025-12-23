@@ -15,6 +15,12 @@
 #include "board.h"
 #include "keyboard_reader.h"
 
+// Forward declaration to avoid circular dependency
+namespace HAL
+{
+    class Hal;
+}
+
 #define KEY_A 0x04 // Keyboard a and A
 #define KEY_B 0x05 // Keyboard b and B
 #define KEY_C 0x06 // Keyboard c and C
@@ -272,16 +278,16 @@ namespace KEYBOARD
         uint32_t _last_pressed_time;
         bool _is_dimmed;
 
+        HAL::Hal* _hal;
         HAL::BoardType _board_type;
 
     public:
-        Keyboard(HAL::BoardType board_type = HAL::BoardType::AUTO_DETECT)
-            : _is_caps_locked(false), _last_key_size(0), _board_type(board_type)
+        Keyboard(HAL::Hal* hal) : _is_caps_locked(false), _last_key_size(0), _hal(hal), _board_type(HAL::BoardType::AUTO_DETECT)
         {
+            init();
         }
+        
         void init();
-
-        // Point2D_t getKey();
 
         uint8_t getKeyNum(Point2D_t keyCoor);
 
