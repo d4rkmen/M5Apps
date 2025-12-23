@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "ascii_fonts.hpp"
+
 #define THEME_COLOR_BG (uint32_t)(0x333333)
 #define THEME_COLOR_BG_DARK (uint32_t)(0x191919)
 #define THEME_COLOR_SYSTEM_BAR (uint32_t)(0xD3D3D3) //(0x99FF00)
@@ -39,6 +41,6 @@
 #define THEME_COLOR_KB_OPT TFT_DARKGREEN
 
 #define THEME_COLOR_REPL_TEXT TFT_WHITE
-#define FONT_10 &fonts::efontEN_10
-#define FONT_12 &fonts::efontEN_12
-#define FONT_16 &fonts::efontEN_16
+#define FONT_10 &efontEN_10
+#define FONT_12 &efontEN_12
+#define FONT_16 &efontEN_16
