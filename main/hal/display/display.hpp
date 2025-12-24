@@ -46,8 +46,7 @@ public:
             cfg.panel_width = 135;
             cfg.offset_x = 53;
             cfg.offset_y = 40;
-            // cfg.offset_rotation = 1;
-            cfg.bus_shared = true;
+            cfg.bus_shared = false;
 
             _panel_instance.config(cfg);
         }
@@ -67,6 +66,7 @@ public:
         setPanel(&_panel_instance);
         // initialize the display
         init();
+        setColorDepth(16);
         setRotation(1);
     }
 };

@@ -430,7 +430,6 @@ namespace lgfx
         void Panel_ST7789V2::writeImage(
             uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, pixelcopy_t* param, bool use_dma)
         {
-            ESP_LOGD(TAG, "writeImage");
             startWrite();
             auto bytes = param->dst_bits >> 3;
             auto src_x = param->src_x;
@@ -444,17 +443,16 @@ namespace lgfx
                     uint32_t i = (src_x + param->src_y * param->src_bitwidth) * bytes;
                     auto src = &((const uint8_t*)param->src_data)[i];
                     _bus->writeCommand(CMD_RAMWR, 8);
-                    _bus->writeBytes(src, wb * h, false, use_dma);
+                    _bus->writeBytes(src, wb * h, false, false);
                 }
                 else
                 {
-                    writePixels(param, w * h, use_dma);
+                    writePixels(param, w * h, false);
                 }
             }
             else
             {
                 // not implemented
-                ESP_LOGW(TAG, "writeImage: transp != NON_TRANSP");
                 h += y;
                 uint32_t wb = w * bytes;
                 do

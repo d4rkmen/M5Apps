@@ -423,7 +423,7 @@ namespace lgfx
 
         void Bus_IDFSPI::writeDataRepeat(uint32_t data, uint_fast8_t bit_length, uint32_t count)
         {
-            // ESP_LOGD(TAG, "writeDataRepeat: data: 0x%x, bits: %d, count: %d", data, bit_length, count);
+            // ESP_LOGI(TAG, "writeDataRepeat: data: 0x%x, bits: %d, count: %d", data, bit_length, count);
             uint8_t bytes = (bit_length + 7) >> 3;
             uint32_t total_bytes = bytes * count;
             uint32_t chunk_size = (_spi_trans_max_bytes / bytes) * bytes;
@@ -446,9 +446,9 @@ namespace lgfx
                 else if (bytes == 3)
                 {
                     // RGB666: create 12-byte super-pattern (LCM of 3 and 4) for 32-bit writes
-                    uint8_t r = (data >> 16) & 0x3F;
+                    uint8_t b = (data >> 16) & 0x3F;
                     uint8_t g = (data >> 8) & 0x3F;
-                    uint8_t b = data & 0x3F;
+                    uint8_t r = data & 0x3F;
                     uint8_t* dst = temp_buf;
                     uint8_t* end = temp_buf + chunk_size;
                     // Build 12-byte pattern (4 copies of 3-byte pattern) for aligned 32-bit access
@@ -500,47 +500,52 @@ namespace lgfx
             {
                 ESP_LOGE(TAG, "Failed to allocate buffer for writeDataRepeat");
             }
+            // _temp_buffer.deleteBuffer();
         }
 
         void Bus_IDFSPI::writePixels(pixelcopy_t* param, uint32_t length)
         {
             // ESP_LOGD(TAG, "writePixels: length: %d pixels", length);
-            const uint8_t bytes = param->dst_bits >> 3;
-            uint32_t limit = _spi_trans_max_bytes / bytes;
-            auto dmabuf = _temp_buffer.getBuffer(limit * bytes);
+            const uint8_t dst_bytes = param->dst_bits >> 3;
+            const uint32_t line_width = param->src_bitwidth; // pixels per horizontal line
+
+            // Allocate buffer for one horizontal line
+            uint32_t line_bytes = line_width * dst_bytes;
+            auto dmabuf = _temp_buffer.getBuffer(line_bytes);
             if (dmabuf == nullptr)
             {
                 ESP_LOGE(TAG, "Failed to allocate buffer for writePixels");
                 return;
             }
-            uint32_t count = 0;
-            uint32_t saved_bitwidth = param->src_bitwidth;
+
+            uint32_t line_count = 0;
             int16_t old_src_x = param->src_x;
-            param->src_bitwidth = limit;
-            // Process pixels in chunks that fit within transaction size
-            do
+
+            // Process each horizontal line
+            while (length > 0)
             {
-                uint32_t step = std::min(limit, length);
-                bool keep_cs_active = length == step ? false : true;
-                // Copy pixels to DMA buffer
-                param->fp_copy(dmabuf, 0, step, param);
+                uint32_t line_pixels = std::min(line_width, length);
+                bool keep_cs_active = (length > line_pixels);
+
+                // Copy one horizontal line of pixels to DMA buffer
+                param->fp_copy(dmabuf, 0, line_pixels, param);
+
+                // Send the horizontal line
+                _tx_color(dmabuf, line_pixels * dst_bytes, keep_cs_active);
+
+                // Advance to next line
                 param->src_y++;
                 param->src_x = old_src_x;
-                // ESP_LOGD(TAG, "src_x: %d, src_y: %d, src_x32: %d, src_y32: %d", param->src_x, param->src_y,
-                // param->src_x32, param->src_y32);
+                length -= line_pixels;
+                line_count++;
+            }
 
-                // Use queued color transfer for pixel data (QSPI mode with chunking)
-                _tx_color(dmabuf, step * bytes, keep_cs_active);
-                length -= step;
-                count++;
-            } while (length > 0);
-            param->src_bitwidth = saved_bitwidth;
-            ESP_LOGD(TAG, "writePixels done, count: %d", count);
+            ESP_LOGD(TAG, "writePixels done, lines: %d", line_count);
         }
 
         void Bus_IDFSPI::writeBytes(const uint8_t* data, uint32_t length, bool dc, bool use_dma)
         {
-            // Use queued color transfer for raw byte data (QSPI mode with chunking)
+            // Use queued color transfer for raw byte data
             uint32_t count = 0;
             uint32_t total = length;
             do
@@ -552,7 +557,6 @@ namespace lgfx
                 length -= chunk;
                 count++;
             } while (length > 0);
-            // _tx_param(data, length, keep_cs_active);
             ESP_LOGD(TAG, "writeBytes: %d, chunks: %d", total, count);
         }
 
@@ -666,6 +670,7 @@ namespace lgfx
                 dstindex = param->fp_copy(dst, dstindex, dstindex + len, param);
                 length -= len;
             } while (length);
+            // _temp_buffer.deleteBuffer();
         }
 
         //----------------------------------------------------------------------------

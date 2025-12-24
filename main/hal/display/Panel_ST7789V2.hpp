@@ -39,7 +39,7 @@ namespace lgfx
                 _cfg.dummy_read_bits = 8;
 
                 _write_depth = color_depth_t::rgb565_2Byte;
-                _read_depth = _write_depth;
+                _read_depth = color_depth_t::rgb666_3Byte;
             }
 
         public:
