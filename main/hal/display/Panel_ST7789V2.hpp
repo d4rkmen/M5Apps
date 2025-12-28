@@ -38,7 +38,9 @@ namespace lgfx
 
                 _cfg.dummy_read_bits = 8;
 
+                // init command list for 16 bit color depth
                 _write_depth = color_depth_t::rgb565_2Byte;
+                // reading is always 18 bit color depth
                 _read_depth = color_depth_t::rgb666_3Byte;
             }
 
@@ -259,10 +261,18 @@ namespace lgfx
             virtual void setColorDepth_impl(color_depth_t depth)
             {
                 _write_depth = ((int)depth & color_depth_t::bit_mask) > 16 ? rgb666_3Byte : rgb565_2Byte;
-                _read_depth = rgb666_3Byte;
+                _read_depth = rgb888_3Byte;
             }
             const uint8_t* getInitCommands(uint8_t listno) const override
             {
+                static constexpr uint8_t list18[] = {
+                    0x28, 0,    0x11, 0,    0x36, 1,    0x88, 0x3A, 1,    0x66, 0xB2, 5,    0x0C, 0x0C, 0x00, 0x33,
+                    0x33, 0xB7, 1,    0x35, 0xB8, 1,    0x2B, 0xc0, 1,    0x2C, 0xc2, 1,    0xFF, 0xc3, 1,    0x11,
+                    0xc4, 1,    0x20, 0xc6, 1,    0x0f, 0xd0, 2,    0xa4, 0xa1, 0xe0, 14,   0xd0, 0x00, 0x05, 0x0e,
+                    0x15, 0x0d, 0x37, 0x43, 0x47, 0x00, 0x15, 0x12, 0x16, 0x19, 0xe1, 14,   0xd0, 0x00, 0x05, 0x0d,
+                    0x0c, 0x06, 0x2d, 0x44, 0x40, 0x0E, 0x1c, 0x18, 0x16, 0x19, 0xFF, 0xFF,
+                };
+
                 static constexpr uint8_t list0[] = {
                     CMD_PORCTRL,
                     5,

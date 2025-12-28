@@ -36,7 +36,8 @@ namespace lgfx
         public:
             struct config_t
             {
-                uint32_t freq_write = 4000000; // 40MHz
+                uint32_t freq_write = 40000000; // 40MHz
+                uint32_t freq_read = 8000000;   // 8MHz
                 int16_t pin_sclk = -1;
                 int16_t pin_cs = -1;
                 int16_t pin_dc = -1;
@@ -106,13 +107,14 @@ namespace lgfx
             // };
 
             // Helper methods for command/param/color transfers (following esp_lcd pattern)
-            esp_err_t _tx_command(uint32_t lcd_cmd, bool keep_cs_active);
+            esp_err_t _tx_command(uint32_t lcd_cmd, bool keep_cs_active, uint32_t freq);
             // esp_err_t _tx_command(uint8_t lcd_cmd, bool keep_cs_active);
             esp_err_t _tx_param(const void* param, size_t param_size, bool keep_cs_active);
             esp_err_t _tx_color(const void* color, size_t color_size, bool keep_cs_active);
 
             // Low-level SPI read method (standard SPI mode, not QSPI)
-            esp_err_t _spi_read_polling(uint8_t* data, uint32_t length);
+            // keep_cs_active: if true, keeps CS low after the transaction for continued reads
+            esp_err_t _spi_read_polling(uint8_t* data, uint32_t length, bool keep_cs_active = false);
 
             config_t _cfg;
             spi_device_handle_t _spi_handle = nullptr;

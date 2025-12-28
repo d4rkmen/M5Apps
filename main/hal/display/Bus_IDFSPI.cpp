@@ -209,7 +209,8 @@ namespace lgfx
         bool Bus_IDFSPI::busy(void) const { return _num_trans_inflight > 0; }
 
         // Low-level polling read (used for readData, readBytes, readPixels)
-        esp_err_t Bus_IDFSPI::_spi_read_polling(uint8_t* data, uint32_t length)
+        // keep_cs_active: if true, keeps CS low after the transaction for continued reads
+        esp_err_t Bus_IDFSPI::_spi_read_polling(uint8_t* data, uint32_t length, bool keep_cs_active)
         {
             if (!_spi_handle || length == 0 || !data)
                 return ESP_ERR_INVALID_ARG;
@@ -224,6 +225,10 @@ namespace lgfx
             trans.tx_buffer = nullptr;
             trans.rx_buffer = data;
             trans.flags = SPI_TRANS_DC_LEVEL_MASK; // Standard SPI mode for reads
+            if (keep_cs_active)
+            {
+                trans.flags |= SPI_TRANS_CS_KEEP_ACTIVE;
+            }
 
             // Use polling mode for reads (as per esp_lcd reference)
             return spi_device_polling_transmit(_spi_handle, &trans);
@@ -231,7 +236,7 @@ namespace lgfx
 
         // Send command (similar to esp_lcd panel_io_spi_tx_param command phase)
         // This should be called Aait() has been called to ensure no queued transactions are pending
-        esp_err_t Bus_IDFSPI::_tx_command(uint32_t lcd_cmd, bool keep_cs_active)
+        esp_err_t Bus_IDFSPI::_tx_command(uint32_t lcd_cmd, bool keep_cs_active, uint32_t freq)
         {
             ESP_LOGD(TAG, "_tx_command: %02x %02x, keep_cs: %d", lcd_cmd & 0xFF, (lcd_cmd >> 16) & 0xFF, keep_cs_active);
             if (!_spi_handle)
@@ -246,16 +251,13 @@ namespace lgfx
             trans->length = _cfg.cmd_bitsize;
             trans->tx_buffer = &lcd_cmd;
             trans->flags = 0; // DC is LOW
+            trans->override_freq_hz = freq;
 
             if (keep_cs_active)
             {
-                // trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
+                trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
             }
 
-            // dc_control(false);
-            // Command is short, using polling mode (as per esp_lcd reference)
-            // esp_err_t ret = spi_device_polling_transmit(_spi_handle, &lcd_trans->base);
-            // dc_control(true);
             return spi_device_polling_transmit(_spi_handle, trans);
         }
 
@@ -304,7 +306,7 @@ namespace lgfx
 
             if (keep_cs_active)
             {
-                // trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
+                trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
             }
 
             // dc_control(true);
@@ -357,13 +359,13 @@ namespace lgfx
                 trans->flags = SPI_TRANS_DC_LEVEL_MASK; // DC is HIGH = data
                 if (keep_cs_active)
                 {
-                    // trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
+                    trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
                 }
                 // SPI per-transfer size has its limitation, cap to maximum supported by bus
                 if (chunk_size > _spi_trans_max_bytes)
                 {
                     chunk_size = _spi_trans_max_bytes;
-                    // trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
+                    trans->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
                 }
                 else
                 {
@@ -403,7 +405,7 @@ namespace lgfx
         bool Bus_IDFSPI::writeCommand(uint32_t data, uint_fast8_t bit_length)
         {
             // Keep CS active as data will follow
-            return _tx_command(data, true) == ESP_OK;
+            return _tx_command(data, true, (bit_length & 0x80) ? _cfg.freq_read : _cfg.freq_write) == ESP_OK;
         }
 
         void Bus_IDFSPI::writeData(uint32_t data, uint_fast8_t bit_length)
@@ -569,8 +571,7 @@ namespace lgfx
 
         void Bus_IDFSPI::beginRead(uint_fast8_t dummy_bits)
         {
-            // For read operations, we use standard SPI mode (not QSPI)
-            // Dummy bits would need to be handled in the transaction if needed
+            readData(dummy_bits);
             beginRead();
         }
 
@@ -591,7 +592,7 @@ namespace lgfx
             uint8_t bytes = (bit_length + 7) >> 3;
             uint8_t buf[4] = {0};
 
-            if (_spi_read_polling(buf, bytes) != ESP_OK)
+            if (_spi_read_polling(buf, bytes, false) != ESP_OK)
             {
                 ESP_LOGE(TAG, "readData failed");
                 return 0;
@@ -609,41 +610,29 @@ namespace lgfx
 
         bool Bus_IDFSPI::readBytes(uint8_t* dst, uint32_t length, bool use_dma)
         {
-            // ESP_LOGD(TAG, "readBytes: %d bytes, use_dma: %d", length, use_dma);
-
             if (!dst || length == 0)
                 return false;
+            // read always RGB666 (3 bytes)
+            uint32_t step = (_spi_trans_max_bytes / 3) * 3;
 
-            // For large reads, split into chunks
-            if (use_dma && _cfg.dma_channel && length > 64)
+            while (length > 0)
             {
-                while (length > 0)
+                uint32_t chunk = std::min(length, step);
+                // Keep CS active if there's more data to read after this chunk
+                bool keep_cs_active = (length > chunk);
+                if (_spi_read_polling(dst, chunk, keep_cs_active) != ESP_OK)
                 {
-                    uint32_t chunk = std::min(length, _spi_trans_max_bytes);
-                    if (_spi_read_polling(dst, chunk) != ESP_OK)
-                    {
-                        ESP_LOGE(TAG, "readBytes chunk failed");
-                        return false;
-                    }
-                    dst += chunk;
-                    length -= chunk;
-                }
-            }
-            else
-            {
-                // Direct read for small transfers
-                if (_spi_read_polling(dst, length) != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "readBytes direct failed");
+                    ESP_LOGE(TAG, "readBytes chunk failed");
                     return false;
                 }
+                dst += chunk;
+                length -= chunk;
             }
             return true;
         }
 
         void Bus_IDFSPI::readPixels(void* dst, pixelcopy_t* param, uint32_t length)
         {
-            // ESP_LOGD(TAG, "readPixels: %d pixels", length);
             const uint32_t bytes = param->src_bits >> 3;
             uint32_t limit = _spi_trans_max_bytes / bytes;
             uint32_t len;
@@ -656,12 +645,13 @@ namespace lgfx
                 ESP_LOGE(TAG, "Failed to allocate buffer for readPixels");
                 return;
             }
-
             // Read and convert pixels in chunks
             do
             {
                 len = (limit <= length) ? limit : length;
-                if (_spi_read_polling((uint8_t*)param->src_data, len * bytes) != ESP_OK)
+                // Keep CS active if there's more data to read after this chunk
+                bool keep_cs_active = (length > len);
+                if (_spi_read_polling((uint8_t*)param->src_data, len * bytes, keep_cs_active) != ESP_OK)
                 {
                     ESP_LOGE(TAG, "readPixels read failed");
                     break;
@@ -670,7 +660,7 @@ namespace lgfx
                 dstindex = param->fp_copy(dst, dstindex, dstindex + len, param);
                 length -= len;
             } while (length);
-            // _temp_buffer.deleteBuffer();
+            _temp_buffer.deleteBuffer();
         }
 
         //----------------------------------------------------------------------------

@@ -21,8 +21,9 @@ public:
             // SPI2 used by SD card, using free SPI3 for display
             cfg.spi_host = SPI3_HOST;
             cfg.freq_write = 80 * 1000 * 1000;
+            cfg.freq_read = 4 * 1000 * 1000;
             // * lock the bus for concurrent access
-            cfg.use_lock = true;
+            // cfg.use_lock = true;
             cfg.pin_dc = 34;
             cfg.pin_cs = 37;
             cfg.pin_sclk = 36;
@@ -66,7 +67,6 @@ public:
         setPanel(&_panel_instance);
         // initialize the display
         init();
-        setColorDepth(16);
         setRotation(1);
     }
 };

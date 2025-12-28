@@ -484,7 +484,6 @@ namespace lgfx
         void Panel_ST7789V2::readRect(
             uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, void* dst, pixelcopy_t* param)
         {
-            ESP_LOGD(TAG, "readRect");
             uint_fast16_t bytes = param->dst_bits >> 3;
             auto len = w * h;
             if (!_cfg.readable)
@@ -496,8 +495,7 @@ namespace lgfx
             startWrite();
             setWindow(x, y, x + w - 1, y + h - 1);
 
-            _bus->writeCommand(CMD_RAMRD, 8);
-            _bus->beginRead(_cfg.dummy_read_pixel);
+            _bus->writeCommand(CMD_RAMRD, 0x88);
 
             if (param->no_convert)
             {
@@ -507,14 +505,10 @@ namespace lgfx
             {
                 _bus->readPixels(dst, param, len);
             }
-            // cs_control(true);
             if (_cfg.end_read_delay_us)
             {
                 delayMicroseconds(_cfg.end_read_delay_us);
             }
-
-            _bus->endRead();
-
             endWrite();
         }
 
