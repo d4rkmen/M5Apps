@@ -161,7 +161,6 @@ namespace UTILS
                      "Screenshot using chunked reading (%d rows at a time, buffer size: %d bytes)",
                      CHUNK_ROWS,
                      chunk_pixel_count * 3 + row_size);
-
             // Process display in chunks from bottom to top (BMP format requirement)
             bool success = true;
             for (int32_t chunk_start_y = height - CHUNK_ROWS; chunk_start_y >= -CHUNK_ROWS + 1; chunk_start_y -= CHUNK_ROWS)
@@ -185,9 +184,9 @@ namespace UTILS
                     for (int32_t x = 0; x < width; x++)
                     {
                         // BMP uses BGR format
-                        bmp_row_buffer[x * 3 + 0] = src_row[x * 3 + 2]; // B
-                        bmp_row_buffer[x * 3 + 1] = src_row[x * 3 + 1]; // G
-                        bmp_row_buffer[x * 3 + 2] = src_row[x * 3 + 0]; // R
+                        bmp_row_buffer[x * 3 + 0] = src_row[x * 3 + 0]; // B
+                        bmp_row_buffer[x * 3 + 1] = src_row[x * 3 + 2]; // G
+                        bmp_row_buffer[x * 3 + 2] = src_row[x * 3 + 1]; // R
                     }
 
                     // Pad row to multiple of 4 bytes
