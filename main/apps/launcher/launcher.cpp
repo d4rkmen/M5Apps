@@ -219,6 +219,18 @@ void Launcher::_wait_enter()
         _boot_message("press any key");
     }
 
+#if 0
+    // display raw color RED, GREEN, BLUE, BLACK, WHITE in a loop.
+    uint32_t colors[] = {0xFF0000, 0x00FF00, 0x0000FF, 0x000000, 0xFFFFFF};
+    while (1)
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            _data.hal->display()->fillRect(0, 0, _data.hal->display()->width(), _data.hal->display()->height(), colors[i]);
+            delay(2000);
+        }
+    }
+#endif
     _init_progress_bar();
 
     uint32_t start_time = millis();
@@ -423,6 +435,20 @@ void Launcher::_update_system_state()
     if (volume != new_volume)
     {
         _data.hal->speaker()->setVolume(new_volume);
+    }
+    // USB host
+    bool usb_host_enabled = _data.hal->usb()->is_initialized();
+    bool new_usb_host_enabled = _data.hal->settings()->getBool("system", "usb_host");
+    if (usb_host_enabled != new_usb_host_enabled)
+    {
+        if (new_usb_host_enabled)
+        {
+            _data.hal->usb()->init();
+        }
+        else
+        {
+            _data.hal->usb()->deinit();
+        }
     }
     // Time shit
     if (_data.hal->isSntpAdjusted())

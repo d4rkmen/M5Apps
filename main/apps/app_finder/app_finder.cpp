@@ -238,6 +238,20 @@ void AppFinder::_update_panel_file_list(PanelData_t& panel)
         }
         else if (panel.current_path == "/usb")
         {
+            // check if usb is enabled
+            if (!_data.hal->settings()->getBool("system", "usb_host"))
+            {
+                // show error dialog
+                UTILS::UI::show_error_dialog(_data.hal, "USB disabled", "USB host is disabled in Settings");
+                // failback to root
+                panel.current_path = "/";
+                // redraw all
+                _data.left_panel.panel_info_needs_update = true;
+                _data.right_panel.panel_info_needs_update = true;
+                _data.left_panel.needs_update = true;
+                _data.right_panel.needs_update = true;
+                return;
+            }
             _mount_usb();
             if (!_data.hal->usb()->is_mounted())
             {

@@ -77,6 +77,27 @@ namespace HAL
         ~USB();
 
         /**
+         * @brief Initialize USB host (creates tasks and queues)
+         *
+         * @return true if initialized successfully
+         * @return false if initialization failed or USB host is disabled in settings
+         */
+        bool init();
+
+        /**
+         * @brief Deinitialize USB host (stops tasks and cleans up resources)
+         */
+        void deinit();
+
+        /**
+         * @brief Check if USB host is initialized
+         *
+         * @return true USB host is initialized
+         * @return false USB host is not initialized
+         */
+        bool is_initialized() const { return _usb_initialized; }
+
+        /**
          * @brief Mount the USB device filesystem
          *
          * @return true if mounted successfully

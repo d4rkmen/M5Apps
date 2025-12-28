@@ -58,6 +58,7 @@ namespace SETTINGS
             {"boot_sound", "Boot sound", TYPE_BOOL, "true", "true", "", "", "Play boot sound on startup"},
             {"show_bat_volt", "Battery voltage", TYPE_BOOL, "true", "true", "", "", "Show battery voltage on the system bar"},
             {"show_time", "Show time", TYPE_BOOL, "true", "true", "", "", "Show time on the system bar"},
+            {"usb_host", "USB host", TYPE_BOOL, "true", "true", "", "", "Enable USB host support for connecting USB devices"},
             {"last_app", "Run last app", TYPE_BOOL, "true", "true", "", "", "Run the last used app on startup"},
             {"last_app_to",
              "Run timeout",

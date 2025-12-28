@@ -3,6 +3,7 @@ key,type,encoding,value
 system,namespace,,
 brightness,data,i32,255
 volume,data,i32,100
+usb_host,data,u8,1
 use_led,data,u8,1
 dim_time,data,i32,30
 boot_sound,data,u8,1

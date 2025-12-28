@@ -780,10 +780,24 @@ namespace UTILS
                         if (item.key == "brightness")
                         {
                             hal->display()->setBrightness(std::stoi(item.value));
+                            // handled in launcher
                         }
                         else if (item.key == "volume")
                         {
                             // hal->speaker()->setVolume(std::stoi(item.value));
+                            // handled in launcher
+                        }
+                        else if (item.key == "usb_host")
+                        {
+                            // handled in launcher
+                            // if (item.value == "true")
+                            // {
+                            //     hal->usb()->init();
+                            // }
+                            // else
+                            // {
+                            //     hal->usb()->deinit();
+                            // }
                         }
                         else if (item.key == "use_led")
                         {

@@ -196,6 +196,15 @@ void AppInstaller::onRunning()
             }
             break;
         case source_usb:
+            // check if usb is enabled
+            if (!_data.hal->settings()->getBool("system", "usb_host"))
+            {
+                _data.usb_initialized = false;
+                // show error dialog
+                UTILS::UI::show_error_dialog(_data.hal, "USB disabled", "USB host is disabled in Settings");
+                _data.state = state_source;
+                return;
+            }
             _init_usb_source();
             if (_data.hal->usb()->is_mounted())
             {
