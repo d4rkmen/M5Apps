@@ -10,6 +10,7 @@ v2.1
 - Speaker class fixed for small samples frames (to use with TTS etc)
 - FLOOD: Fixed device deletion, when no device selected
 - FLOOD: Fixed device list refresh on new device discovery
+- SETTINGS: Added System - USB host setting to enable/disable USB host
 
 v2.0
 
