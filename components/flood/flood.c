@@ -683,6 +683,11 @@ static esp_err_t flood_process_hello_packet(const uint8_t* data, uint16_t length
     // Update device data
     flood_save_device_persistent(&persistent_info);
     flood_update_device_volatile(header->source_mac, &volatile_info);
+    // Call message callback if registered
+    if (s_message_callback != NULL)
+    {
+        s_message_callback(header, data, length, rssi, s_message_callback_user_data);
+    }
     // check ACK required
     if (header->flags & MESH_FLAG_ACK_REQUIRED)
     {
