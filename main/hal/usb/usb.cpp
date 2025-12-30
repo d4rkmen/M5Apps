@@ -56,7 +56,19 @@ namespace HAL
           _device_connected(false), _is_mounted(false), _device_addr(0), _device_info({}), _msc_device(nullptr),
           _vfs_handle(nullptr), _hal(hal)
     {
-        init();
+        // Check if USB host is enabled in settings
+        HAL::Hal* hal_ = (HAL::Hal*)_hal;
+        if (hal_ && hal_->settings())
+        {
+            if (hal_->settings()->getBool("system", "usb_host"))
+            {
+                init();
+            }
+            else
+            {
+                ESP_LOGI(TAG, "USB host is disabled in settings");
+            }
+        }
     }
 
     USB::~USB() { deinit(); }
@@ -67,18 +79,6 @@ namespace HAL
         {
             ESP_LOGW(TAG, "USB host already initialized");
             return true;
-        }
-
-        // Check if USB host is enabled in settings
-        HAL::Hal* hal = (HAL::Hal*)_hal;
-        if (hal && hal->settings())
-        {
-            bool usb_host_enabled = hal->settings()->getBool("system", "usb_host");
-            if (!usb_host_enabled)
-            {
-                ESP_LOGI(TAG, "USB host is disabled in settings");
-                return false;
-            }
         }
 
         ESP_LOGI(TAG, "Initializing USB host");
@@ -92,30 +92,41 @@ namespace HAL
         }
 
         // Create USB task
-        BaseType_t task_created = xTaskCreate(usb_task, "usb_task", 2048, this, 5, &_usb_task_handle);
-        if (task_created != pdPASS)
+        _usb_task_created = xTaskCreate(usb_task, "usb_task", 2048, this, 5, &_usb_task_handle);
+        if (_usb_task_created != pdPASS)
         {
             ESP_LOGE(TAG, "Failed to create USB task");
-            vQueueDelete(_app_queue);
-            _app_queue = nullptr;
-            return false;
+            goto error;
         }
 
         // Create MSC task
-        task_created = xTaskCreate(msc_task, "msc_task", 2048, this, 5, &_msc_task_handle);
-        if (task_created != pdPASS)
+        _msc_task_created = xTaskCreate(msc_task, "msc_task", 2048, this, 5, &_msc_task_handle);
+        if (_msc_task_created != pdPASS)
         {
             ESP_LOGE(TAG, "Failed to create MSC task");
-            vTaskDelete(_usb_task_handle);
-            _usb_task_handle = nullptr;
-            vQueueDelete(_app_queue);
-            _app_queue = nullptr;
-            return false;
+            goto error;
         }
 
         _usb_initialized = true;
         ESP_LOGI(TAG, "USB host initialized successfully");
         return true;
+    error:
+        if (_msc_task_created == pdPASS)
+        {
+            vTaskDelete(_msc_task_handle);
+            _msc_task_handle = nullptr;
+        }
+        if (_usb_task_created == pdPASS)
+        {
+            vTaskDelete(_usb_task_handle);
+            _usb_task_handle = nullptr;
+        }
+        if (_app_queue)
+        {
+            vQueueDelete(_app_queue);
+            _app_queue = nullptr;
+        }
+        return false;
     }
 
     void USB::deinit()
@@ -140,16 +151,16 @@ namespace HAL
         vTaskDelay(pdMS_TO_TICKS(100));
 
         // Delete MSC task
-        if (_msc_task_handle)
+        if (_msc_task_handle && _msc_task_created == pdPASS)
         {
             vTaskDelete(_msc_task_handle);
             _msc_task_handle = nullptr;
         }
 
         // Delete USB task
-        if (_usb_task_handle)
+        if (_usb_task_handle && _usb_task_created == pdPASS)
         {
-            vTaskDelete(_usb_task_handle);
+            // vTaskDelete(_usb_task_handle);
             _usb_task_handle = nullptr;
         }
 

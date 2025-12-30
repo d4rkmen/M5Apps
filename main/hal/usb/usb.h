@@ -40,6 +40,8 @@ namespace HAL
     private:
         static const char* MOUNT_POINT;
 
+        BaseType_t _usb_task_created;
+        BaseType_t _msc_task_created;
         TaskHandle_t _usb_task_handle;
         TaskHandle_t _msc_task_handle;
         QueueHandle_t _app_queue;
