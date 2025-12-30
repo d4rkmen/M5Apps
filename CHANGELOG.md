@@ -1,5 +1,16 @@
 Install with M5Burner!
 
+v2.1
+
+- M5GFX dependency removed, using LovyanGFX 1.2.7 instead
+- LovyanGFX driver added for ST7789V2 panel using ESP-IDF SPI master driver on full speeed 80 MHz
+- I2C driver wrapper added for ESP-IDF I2C master driver
+- Refactored HAL class to reflect driver changes
+- ADV speaker init fixed (was no sound due to lack of ES8311 initialization)
+- Speaker class fixed for small samples frames (to use with TTS etc)
+- FLOOD: Fixed device deletion, when no device selected
+- FLOOD: Fixed device list refresh on new device discovery
+
 v2.0
 
 - CardPuter ADV support added
