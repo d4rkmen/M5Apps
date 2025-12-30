@@ -148,7 +148,10 @@ void AppFlood::onCreate()
     std::string node_name = _data.hal->settings()->getString("flood", "node_name");
     if (node_name.empty() || node_name == CONFIG_FLOOD_DEVICE_NAME)
     {
-        node_name.append(std::format("_{:04X}", flood_get_our_device_id()));
+        // read before flood init
+        uint8_t our_mac[6];
+        flood_get_our_mac(our_mac);
+        node_name.append(std::format("_{:04X}", flood_get_device_id(our_mac)));
     }
     // Start flood
     if (flood_init(node_name.c_str(),
@@ -240,9 +243,11 @@ void AppFlood::onRunning()
         return;
     }
     // periodic render
-    if ((uint32_t)(millis() - _data.last_render_tick) >= APP_RENDER_INTERVAL_MS)
+    uint32_t now = millis();
+    if ((uint32_t)(now - _data.last_render_tick) >= APP_RENDER_INTERVAL_MS)
     {
         _data.need_render = true;
+        _data.last_render_tick = now;
     }
 
     bool updated = false;
@@ -715,7 +720,6 @@ bool AppFlood::_render_devices()
 
     _render_devices_scrollbar(panel_x, panel_width);
 
-    _data.last_render_tick = millis();
     _data.need_render = false;
     return true;
 }
@@ -1379,29 +1383,37 @@ bool AppFlood::_handle_devices_navigation()
         {
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_BACKSPACE);
-            // show confirmation dialog
-            bool result =
-                UTILS::UI::show_confirmation_dialog(_data.hal, "Confirm", std::format("Delete {}?", _data.chat_with).c_str());
-            if (result)
+            // ignore if not selected
+            if (_data.selected_index >= 0 && _data.selected_index < (int)_data.devices.size())
             {
-                // delete device or channel
-                esp_err_t ret = _data.chat_role == MESH_ROLE_CHANNEL ? flood_remove_channel(_data.chat_with.c_str())
-                                                                     : flood_remove_device(_data.chat_mac);
-                if (ret != ESP_OK)
+                auto& d = _data.devices[_data.selected_index];
+                _data.chat_with = d.name;
+                memcpy(_data.chat_mac, d.mac, 6);
+                // show confirmation dialog
+                bool result = UTILS::UI::show_confirmation_dialog(_data.hal,
+                                                                  "Confirm",
+                                                                  std::format("Delete {}?", _data.chat_with).c_str());
+                if (result)
                 {
-                    UTILS::UI::show_error_dialog(_data.hal,
-                                                 "Error",
-                                                 std::format("Failed to delete {}", _data.chat_with).c_str());
+                    // delete device or channel
+                    esp_err_t ret = _data.chat_role == MESH_ROLE_CHANNEL ? flood_remove_channel(_data.chat_with.c_str())
+                                                                         : flood_remove_device(_data.chat_mac);
+                    if (ret != ESP_OK)
+                    {
+                        UTILS::UI::show_error_dialog(_data.hal,
+                                                     "Error",
+                                                     std::format("Failed to delete {}", _data.chat_with).c_str());
+                    }
+                    else
+                    {
+                        // reload data, item deleted
+                        _data.need_refresh = true;
+                    }
                 }
-                else
-                {
-                    // reload data, item deleted
-                    _data.need_refresh = true;
-                }
+                // render anyway to restore from dialog
+                _data.need_render = true;
+                changed = true;
             }
-            // render anyway to restore from dialog
-            _data.need_render = true;
-            changed = true;
         }
         return changed;
     }
