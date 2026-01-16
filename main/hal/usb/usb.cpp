@@ -9,9 +9,6 @@
 #include <string.h>
 
 static const char* TAG = "USB";
-// workaround for msc_host.h cant see MSC_DEVICE_CONNECTED and MSC_DEVICE_DISCONNECTED
-#define MSC_DEVICE_CONNECTED 0
-#define MSC_DEVICE_DISCONNECTED 1
 
 namespace HAL
 {
@@ -91,6 +88,9 @@ namespace HAL
             return false;
         }
 
+        // Mark initialized before starting tasks to avoid a race where tasks exit early
+        _usb_initialized = true;
+
         // Create USB task
         _usb_task_created = xTaskCreate(usb_task, "usb_task", 2048, this, 5, &_usb_task_handle);
         if (_usb_task_created != pdPASS)
@@ -107,10 +107,10 @@ namespace HAL
             goto error;
         }
 
-        _usb_initialized = true;
         ESP_LOGI(TAG, "USB host initialized successfully");
         return true;
     error:
+        _usb_initialized = false;
         if (_msc_task_created == pdPASS)
         {
             vTaskDelete(_msc_task_handle);
@@ -154,21 +154,18 @@ namespace HAL
         if (_msc_task_handle && _msc_task_created == pdPASS)
         {
             vTaskDelete(_msc_task_handle);
-            _msc_task_handle = nullptr;
         }
 
         // Delete USB task
         if (_usb_task_handle && _usb_task_created == pdPASS)
         {
-            // vTaskDelete(_usb_task_handle);
-            _usb_task_handle = nullptr;
+            vTaskDelete(_usb_task_handle);
         }
 
         // Delete queue
         if (_app_queue)
         {
             vQueueDelete(_app_queue);
-            _app_queue = nullptr;
         }
 
         // Reset state
@@ -176,6 +173,11 @@ namespace HAL
         _device_addr = 0;
         _msc_device = nullptr;
         _vfs_handle = nullptr;
+        _usb_task_created = pdFAIL;
+        _msc_task_created = pdFAIL;
+        _msc_task_handle = nullptr;
+        _usb_task_handle = nullptr;
+        _app_queue = nullptr;
 
         ESP_LOGI(TAG, "USB host deinitialized");
     }
@@ -185,13 +187,11 @@ namespace HAL
      * @param event_data Event data
      * @param arg Argument
      */
-    void USB::msc_event_callback(const void* event_data, void* arg)
+    void USB::msc_event_callback(const msc_host_event_t* event, void* arg)
     {
         USB* usb = static_cast<USB*>(arg);
 
-        const msc_host_event_t* event = static_cast<const msc_host_event_t*>(event_data);
-
-        if (event->event == MSC_DEVICE_CONNECTED)
+        if (event->event == MSG_DEVICE_CONNECTED)
         {
             ESP_LOGI(TAG, "MSC device connected (usb_addr=%d)", event->device.address);
             TaskMessage message = {
@@ -200,7 +200,7 @@ namespace HAL
             };
             xQueueSend(usb->_app_queue, &message, portMAX_DELAY);
         }
-        else if (event->event == MSC_DEVICE_DISCONNECTED)
+        else if (event->event == MSG_DEVICE_DISCONNECTED)
         {
             ESP_LOGI(TAG, "MSC device disconnected");
             TaskMessage message = {
@@ -217,10 +217,13 @@ namespace HAL
         ESP_LOGI(TAG, "USB task started");
 
         // Install USB Host Library
-        const usb_host_config_t host_config = {.skip_phy_setup = false,
-                                               .root_port_unpowered = false,
-                                               .intr_flags = ESP_INTR_FLAG_LEVEL1,
-                                               .enum_filter_cb = nullptr};
+        const usb_host_config_t host_config = {
+            .skip_phy_setup = false,
+            .root_port_unpowered = false,
+            .intr_flags = ESP_INTR_FLAG_LEVEL1,
+            .enum_filter_cb = nullptr,
+            .fifo_settings_custom = {.nptx_fifo_lines = 0, .ptx_fifo_lines = 0, .rx_fifo_lines = 0},
+            .peripheral_map = 0};
         ESP_ERROR_CHECK(usb_host_install(&host_config));
 
         bool has_clients = false;
@@ -259,9 +262,10 @@ namespace HAL
         }
         ESP_LOGD(TAG, "Deinitializing USB");
         vTaskDelay(pdMS_TO_TICKS(10)); // Give clients some time to uninstall
-        usb_host_uninstall();
+        ESP_ERROR_CHECK(usb_host_uninstall());
         vTaskDelete(NULL);
     }
+
     void USB::msc_task(void* arg)
     {
         USB* usb = static_cast<USB*>(arg);

@@ -12,8 +12,8 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "usb/usb_host.h"
-#include "msc_host.h"
-#include "msc_host_vfs.h"
+#include "usb/msc_host.h"
+#include "usb/msc_host_vfs.h"
 
 namespace HAL
 {
@@ -72,7 +72,7 @@ namespace HAL
         // MSC task function
         static void msc_task(void* arg);
         // MSC event callback
-        static void msc_event_callback(const void* event, void* arg);
+        static void msc_event_callback(const msc_host_event_t* event, void* arg);
 
     public:
         USB(void* hal);
