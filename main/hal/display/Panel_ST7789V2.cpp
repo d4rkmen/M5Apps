@@ -335,7 +335,7 @@ namespace lgfx
 
         void Panel_ST7789V2::setWindow(uint_fast16_t xs, uint_fast16_t ys, uint_fast16_t xe, uint_fast16_t ye)
         {
-            ESP_LOGD(TAG, "setWindow: (%d,%d) -> (%d,%d)", xs, ys, xe, ye);
+            // ESP_LOGD(TAG, "setWindow: (%d,%d) -> (%d,%d)", xs, ys, xe, ye);
 
             if (xs > xe || xe > _width - 1)
             {

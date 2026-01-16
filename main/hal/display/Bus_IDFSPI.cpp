@@ -238,7 +238,7 @@ namespace lgfx
         // This should be called Aait() has been called to ensure no queued transactions are pending
         esp_err_t Bus_IDFSPI::_tx_command(uint32_t lcd_cmd, bool keep_cs_active, uint32_t freq)
         {
-            ESP_LOGD(TAG, "_tx_command: %02x %02x, keep_cs: %d", lcd_cmd & 0xFF, (lcd_cmd >> 16) & 0xFF, keep_cs_active);
+            // ESP_LOGD(TAG, "_tx_command: %02x %02x, keep_cs: %d", lcd_cmd & 0xFF, (lcd_cmd >> 16) & 0xFF, keep_cs_active);
             if (!_spi_handle)
                 return ESP_ERR_INVALID_STATE;
             // Wait for any queued transactions before reading
@@ -420,7 +420,7 @@ namespace lgfx
 
             // Send as param (polling, CS will be released after this)
             _tx_param(buf, bytes, false);
-            ESP_LOGD(TAG, "writeData: data: 0x%x, bits: %d", data, bit_length);
+            // ESP_LOGD(TAG, "writeData: data: 0x%x, bits: %d", data, bit_length);
         }
 
         void Bus_IDFSPI::writeDataRepeat(uint32_t data, uint_fast8_t bit_length, uint32_t count)
@@ -542,7 +542,7 @@ namespace lgfx
                 line_count++;
             }
 
-            ESP_LOGD(TAG, "writePixels done, lines: %d", line_count);
+            // ESP_LOGD(TAG, "writePixels done, lines: %d", line_count);
         }
 
         void Bus_IDFSPI::writeBytes(const uint8_t* data, uint32_t length, bool dc, bool use_dma)
@@ -559,7 +559,7 @@ namespace lgfx
                 length -= chunk;
                 count++;
             } while (length > 0);
-            ESP_LOGD(TAG, "writeBytes: %d, chunks: %d", total, count);
+            // ESP_LOGD(TAG, "writeBytes: %d, chunks: %d", total, count);
         }
 
         uint8_t* Bus_IDFSPI::getDMABuffer(uint32_t length)
