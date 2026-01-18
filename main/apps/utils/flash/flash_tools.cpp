@@ -25,9 +25,6 @@
 
 static const char* TAG = "FLASH_TOOLS";
 
-// Buffer size for reading/writing firmware in chunks
-#define FLASH_BUFFER_SIZE (4 * 1024) // 4KB chunks
-#define ENCRYPTED_BLOCK_SIZE 16      // First 16 bytes are special (magic byte, etc.)
 
 namespace UTILS
 {

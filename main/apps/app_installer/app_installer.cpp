@@ -10,11 +10,15 @@
 #include "app_installer.h"
 #include "esp_log.h"
 #include "esp_partition.h"
+#include "esp_app_format.h"
+#include "esp_app_desc.h"
+#include "esp_flash.h"
 #include "../utils/theme/theme_define.h"
 #include <dirent.h>
 #include <sys/stat.h>
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include "../utils/ui/dialog.h"
 #include "esp_http_client.h"
 #include "cJSON.h"
@@ -35,7 +39,7 @@ static const char* TAG = "APP_INSTALLER";
 #define DESC_MAX_DISPLAY_CHARS 19
 #define WIFI_CONNECT_TIMEOUT_MS 10000
 #define HTTP_RESPONSE_BUFFER_SIZE (16 * 1024)
-#define FILE_DOWNLOAD_BUFFER_SIZE (4 * 1024)
+#define FILE_DOWNLOAD_BUFFER_SIZE FLASH_BUFFER_SIZE
 #define KEY_HOLD_MS 500
 #define KEY_REPEAT_MS 100
 #define SCROLLBAR_MIN_HEIGHT 10
@@ -979,78 +983,20 @@ bool AppInstaller::_handle_file_selection()
                     new_path = _data.current_path;
                     if (new_path != "/")
                         new_path += "/";
-                    new_path += selected_item.name;
+                    new_path += selected_item->name;
                 }
                 _navigate_directory(new_path);
             }
-            else if (_has_extension(selected_item.fname, ".bin"))
+            else if (_has_extension(selected_item->fname, ".bin"))
             {
                 if (_data.source_type == source_cloud)
                 {
-                    if (_show_confirmation_dialog(selected_item.name, "Download the app?"))
+                    if (_show_confirmation_dialog(selected_item->name, "Install the app?"))
                     {
-                        // chck if dest path starts from /sdcard
-                        std::string dl_path = _data.hal->settings()->getString("installer", "dl_path");
-                        if (dl_path.find("/sdcard") != 0 && dl_path.find("/usb") != 0)
+                        std::string url = _data.current_base_url + selected_item->fname;
+                        if (!_download_cloud_file(url, "", selected_item->name) && !_data.error_message.empty())
                         {
-                            UTILS::UI::show_error_dialog(_data.hal,
-                                                         "Invalid download path",
-                                                         "Please set valid download path in Settings");
-                        }
-                        else
-                        {
-                            std::string url = _data.current_base_url + selected_item.fname;
-                            std::string dest = dl_path + "/" + selected_item.name + ".bin";
-                            UTILS::UI::show_progress(_data.hal, selected_item.name, -1, "Mounting SD card...");
-                            _mount_sdcard();
-                            if (_data.hal->sdcard()->is_mounted())
-                            {
-                                // create dest directory if not exists recursively
-                                // Create directories recursively
-                                for (size_t i = 1; i < dl_path.length(); i++)
-                                {
-                                    if (dl_path[i] == '/')
-                                    {
-                                        std::string temp = dl_path.substr(0, i);
-                                        mkdir(temp.c_str(), 0777);
-                                    }
-                                }
-                                // Ensure the final directory exists
-                                mkdir(dl_path.c_str(), 0777);
-                                if (!_download_cloud_file(url, dest, selected_item.name))
-                                {
-                                    UTILS::UI::show_error_dialog(_data.hal,
-                                                                 "Download failed",
-                                                                 _data.error_message.empty() ? "Some technical issue occurred"
-                                                                                             : _data.error_message);
-                                }
-                                else
-                                {
-                                    if (_show_confirmation_dialog(selected_item.name, "Install downloaded app?"))
-                                    {
-                                        // Start the installation process
-                                        _install_firmware(dest);
-                                        // check delete settings
-                                        if (_data.hal->settings()->getBool("installer", "auto_delete"))
-                                        {
-                                            // delete file
-                                            UTILS::UI::show_progress(_data.hal,
-                                                                     selected_item.name,
-                                                                     -1,
-                                                                     "Deleting temp file...");
-                                            unlink(dest.c_str());
-                                            delay(500);
-                                        }
-                                    }
-                                }
-                                _unmount_sdcard();
-                            }
-                            else
-                            {
-                                UTILS::UI::show_error_dialog(_data.hal,
-                                                             "SD card required",
-                                                             "Please plug in valid SD card and try again");
-                            }
+                            UTILS::UI::show_error_dialog(_data.hal, "Install failed", _data.error_message);
                         }
                     }
                     // Show confirmation dialog for .bin files
@@ -1546,7 +1492,7 @@ void AppInstaller::_handle_installation_complete()
     buttons.push_back(UTILS::UI::DialogButton_t("Restart", THEME_COLOR_BG_SELECTED, TFT_BLACK));
 
     int result = UTILS::UI::show_dialog(_data.hal,
-                                        "Installation complete",
+                                        "Success",
                                         lgfx::v1::convert_to_rgb888(TFT_GREEN),
                                         "restart in", // Will be formatted with remaining time
                                         lgfx::v1::convert_to_rgb888(TFT_LIGHTGREY),
@@ -1710,9 +1656,9 @@ void AppInstaller::_update_cloud_file_list()
             if (name && descr)
             {
                 _data.file_list.push_back(new FileItem_t({name->valuestring,
-                                           true, // is_dir
-                                           0,    // size
-                                           "",   // fname
+                                                          true, // is_dir
+                                                          0,    // size
+                                                          "",   // fname
                                                           descr->valuestring}));
             }
         }
@@ -1733,9 +1679,9 @@ void AppInstaller::_update_cloud_file_list()
             {
                 // ESP_LOGI(TAG, "Free heap: %d, stack: %d", esp_get_free_heap_size(), _free_stack_size());
                 _data.file_list.push_back(new FileItem_t({name->valuestring,
-                                           false,                                 // is_dir
-                                           (uint64_t)(size ? size->valueint : 0), // size
-                                           fname ? fname->valuestring : "",       // fname
+                                                          false,                                 // is_dir
+                                                          (uint64_t)(size ? size->valueint : 0), // size
+                                                          fname ? fname->valuestring : "",       // fname
                                                           descr ? descr->valuestring : ""}));
             }
         }
@@ -1744,133 +1690,652 @@ void AppInstaller::_update_cloud_file_list()
     cJSON_Delete(root);
 }
 
-// Add this helper method to download a file from the cloud repository
+// Add this helper method to install firmware directly from the cloud repository
 bool AppInstaller::_download_cloud_file(const std::string& url, const std::string& dest_path, const std::string& display_name)
 {
-    ESP_LOGI(TAG, "Downloading file from %s to %s", url.c_str(), dest_path.c_str());
-    _data.error_message = "Unknown error";
-    // Create HTTP client configuration
-    esp_http_client_config_t config = {
-        .url = url.c_str(),
+    ESP_LOGI(TAG, "Installing firmware from %s", url.c_str());
+    _data.error_message.clear();
+    (void)dest_path;
+    uint32_t start_time = millis();
+
+    auto is_block_empty = [](const uint8_t* data, size_t len) -> bool
+    {
+        if (!len || len % sizeof(uint32_t))
+            return false;
+        const uint32_t* data32 = (const uint32_t*)data;
+        size_t count = len / sizeof(uint32_t);
+        for (size_t i = 0; i < count; i++)
+        {
+            if (data32[i] != 0xFFFFFFFF)
+                return false;
+        }
+        return true;
     };
 
-    // Initialize HTTP client
+    auto format_size = [](size_t current, size_t total) -> std::string
+    { return std::format("{} / {} KB", (size_t)(current / 1024), (size_t)(total / 1024)); };
+
+    std::string app_name = display_name;
+    size_t dot_pos = app_name.find_last_of('.');
+    if (dot_pos != std::string::npos)
+    {
+        app_name = app_name.substr(0, dot_pos);
+    }
+    if (app_name.length() > 15)
+    {
+        app_name = app_name.substr(0, 14) + ">";
+    }
+
+    _data.firmware_path = url;
+    _data.state = state_installing;
+    _data.install_title = app_name;
+
+    esp_http_client_config_t config = {};
+    config.url = url.c_str();
+    config.buffer_size = FILE_DOWNLOAD_BUFFER_SIZE;
+    config.buffer_size_tx = FILE_DOWNLOAD_BUFFER_SIZE;
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client)
     {
         ESP_LOGE(TAG, "Failed to initialize HTTP client");
         _data.error_message = "Failed to initialize HTTP client";
+        _data.state = state_browsing;
         return false;
     }
 
-    // Open HTTP connection
+    auto cleanup_client = [&]()
+    {
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+    };
+
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
         _data.error_message = "Failed to open HTTP connection: " + std::string(esp_err_to_name(err));
         esp_http_client_cleanup(client);
+        _data.state = state_browsing;
         return false;
     }
 
-    // Get content length
     int content_length = esp_http_client_fetch_headers(client);
     if (content_length <= 0)
     {
         ESP_LOGE(TAG, "Failed to get content length");
         _data.error_message = "Failed to fetch response headers";
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
+        cleanup_client();
+        _data.state = state_browsing;
         return false;
     }
+
     int status_code = esp_http_client_get_status_code(client);
     if (status_code != 200)
     {
         ESP_LOGE(TAG, "Error response: %d", status_code);
         _data.error_message = "Error response: " + std::to_string(status_code);
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        return false;
-    }
-    // Open file for writing
-    FILE* f = fopen(dest_path.c_str(), "wb");
-    if (!f)
-    {
-        ESP_LOGE(TAG, "Failed to open file for writing");
-        _data.error_message = "Failed to create file: " + dest_path;
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
+        cleanup_client();
+        _data.state = state_browsing;
         return false;
     }
 
-    // Create buffer for reading data
-    const int buffer_size = FILE_DOWNLOAD_BUFFER_SIZE;
-    char* buffer = (char*)malloc(buffer_size);
-    if (!buffer)
+    const size_t file_size = static_cast<size_t>(content_length);
+    ESP_LOGI(TAG, "Free heap before download buffers: %u", (uint32_t)esp_get_free_heap_size());
+    uint8_t* io_buffer = (uint8_t*)malloc(FILE_DOWNLOAD_BUFFER_SIZE);
+    if (!io_buffer)
     {
-        ESP_LOGE(TAG, "Failed to allocate memory for download buffer");
         _data.error_message = "No memory for download buffer";
-        fclose(f);
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
+        cleanup_client();
+        _data.state = state_browsing;
         return false;
     }
 
-    // Download file with progress updates
-    int bytes_read = 0;
-    int total_read = 0;
-    bool success = true;
+    uint8_t* prefix_buffer = nullptr;
+    size_t prefix_size = 0;
+    bool prefix_allocated = false;
 
-    // Show initial progress dialog
-    UTILS::UI::show_progress(_data.hal, display_name, -1, "Starting download...");
-
-    while (true)
+    auto free_buffers = [&]()
     {
-        bytes_read = esp_http_client_read(client, buffer, buffer_size);
-        if (bytes_read <= 0)
+        if (prefix_allocated && prefix_buffer)
         {
-            // Download complete or error
-            _data.error_message = std::format("Download error after {} bytes", total_read);
-            break;
+            free(prefix_buffer);
+            prefix_buffer = nullptr;
         }
-
-        // Write data to file
-        size_t written = fwrite(buffer, 1, bytes_read, f);
-        if (written != bytes_read)
+        if (io_buffer)
         {
-            ESP_LOGE(TAG, "Failed to write data to file: %d != %d", written, bytes_read);
-            _data.error_message = std::format("File write error after {} bytes", total_read);
-            success = false;
-            break;
+            free(io_buffer);
+            io_buffer = nullptr;
         }
+    };
 
-        // Update progress
-        total_read += bytes_read;
-        int progress = (total_read * 100) / content_length;
+    size_t total_read = 0;
 
-        // Show progress dialog
-        std::string status = std::format("{}/{} KB", (uint32_t)(total_read / 1024), (uint32_t)(content_length / 1024));
-        UTILS::UI::show_progress(_data.hal, display_name, progress, status);
+    _installation_progress_callback(-1, "Reading firmware header...", this);
+    constexpr size_t header_needed = sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t);
+    if (header_needed > file_size)
+    {
+        _data.error_message = "Firmware too small";
+        cleanup_client();
+        free_buffers();
+        _data.state = state_browsing;
+        return false;
     }
 
-    // Clean up
-    free(buffer);
-    fclose(f);
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-
-    // Final progress update
-    if (success)
+    uint8_t header_buf[header_needed];
+    size_t header_read = 0;
+    while (header_read < header_needed)
     {
-        _data.error_message = "";
-        UTILS::UI::show_progress(_data.hal, display_name, 100, "Download complete");
-        delay(500); // Show the complete message briefly
+        int read_len = esp_http_client_read(client, (char*)(header_buf + header_read), (int)(header_needed - header_read));
+        if (read_len <= 0)
+        {
+            _data.error_message = "Failed to read firmware header";
+            cleanup_client();
+            free_buffers();
+            _data.state = state_browsing;
+            return false;
+        }
+        header_read += (size_t)read_len;
+        total_read += (size_t)read_len;
+    }
+
+    esp_image_header_t header = {};
+    memcpy(&header, header_buf, sizeof(esp_image_header_t));
+    if (header.chip_id != CONFIG_IDF_FIRMWARE_CHIP_ID)
+    {
+        cleanup_client();
+        free_buffers();
+        _handle_installation_error(FlashStatus::ERROR_INVALID_CHIP_ID);
+        return false;
+    }
+
+    esp_app_desc_t app_desc = {};
+    memcpy(&app_desc, header_buf + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t), sizeof(esp_app_desc_t));
+
+    std::vector<esp_partition_info_t> file_partitions;
+    if (app_desc.magic_word == ESP_APP_DESC_MAGIC_WORD)
+    {
+        esp_partition_info_t part = {};
+        part.magic = ESP_PARTITION_MAGIC;
+        part.type = ESP_PARTITION_TYPE_APP;
+        part.subtype = ESP_PARTITION_SUBTYPE_APP_OTA_MIN;
+        part.pos.offset = 0;
+        part.pos.size = file_size;
+        memset(part.label, 0, sizeof(part.label));
+        strncpy((char*)part.label, app_name.c_str(), sizeof(part.label) - 1);
+        part.flags = 0;
+        file_partitions.push_back(part);
+        prefix_buffer = header_buf;
+        prefix_size = header_needed;
+    }
+    else if (app_desc.magic_word == ESP_BOOTLOADER_MAGIC_WORD1 || app_desc.magic_word == ESP_BOOTLOADER_MAGIC_WORD2)
+    {
+        _installation_progress_callback(-1, "Reading PT...", this);
+        const size_t table_end = ESP_PARTITION_TABLE_OFFSET + ESP_PARTITION_TABLE_MAX_LEN;
+        if (table_end > file_size)
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(FlashStatus::ERROR_FILE_READ);
+            return false;
+        }
+
+        size_t skip_remaining = 0;
+        if (ESP_PARTITION_TABLE_OFFSET > header_read)
+        {
+            skip_remaining = ESP_PARTITION_TABLE_OFFSET - header_read;
+        }
+        while (skip_remaining > 0)
+        {
+            size_t to_read = std::min(skip_remaining, (size_t)FILE_DOWNLOAD_BUFFER_SIZE);
+            int read_len = esp_http_client_read(client, (char*)io_buffer, (int)to_read);
+            if (read_len <= 0)
+            {
+                cleanup_client();
+                free_buffers();
+                _handle_installation_error(FlashStatus::ERROR_FILE_READ);
+                return false;
+            }
+            skip_remaining -= (size_t)read_len;
+            total_read += (size_t)read_len;
+        }
+
+        uint8_t table_buf[ESP_PARTITION_TABLE_MAX_LEN];
+        size_t table_read = 0;
+        while (table_read < ESP_PARTITION_TABLE_MAX_LEN)
+        {
+            int read_len = esp_http_client_read(client,
+                                                (char*)(table_buf + table_read),
+                                                (size_t)(ESP_PARTITION_TABLE_MAX_LEN - table_read));
+            if (read_len <= 0)
+            {
+                cleanup_client();
+                free_buffers();
+                _handle_installation_error(FlashStatus::ERROR_FILE_READ);
+                return false;
+            }
+            table_read += (size_t)read_len;
+            total_read += (size_t)read_len;
+        }
+
+        prefix_buffer = header_buf;
+        prefix_size = header_needed;
+
+        const uint8_t* table_ptr = table_buf;
+        const esp_partition_info_t* partitions = reinterpret_cast<const esp_partition_info_t*>(table_ptr);
+        if (partitions[0].magic != ESP_PARTITION_MAGIC)
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(FlashStatus::ERROR_PARTITION_TABLE);
+            return false;
+        }
+
+        for (int i = 0; i < ESP_PARTITION_TABLE_MAX_ENTRIES; i++)
+        {
+            const esp_partition_info_t* part = &partitions[i];
+            if (part->magic != ESP_PARTITION_MAGIC)
+            {
+                break;
+            }
+            file_partitions.push_back(*part);
+            if (part->type == PART_TYPE_END)
+            {
+                break;
+            }
+        }
     }
     else
     {
-        // If failed, delete partial file
-        unlink(dest_path.c_str());
+        cleanup_client();
+        free_buffers();
+        _handle_installation_error(FlashStatus::ERROR_INVALID_FIRMWARE);
+        return false;
     }
 
-    return success;
+    size_t p_count = file_partitions.size();
+    if (p_count == 0)
+    {
+        cleanup_client();
+        free_buffers();
+        _handle_installation_error(FlashStatus::ERROR_INVALID_FIRMWARE);
+        return false;
+    }
+
+    bool custom_install = _data.hal->settings()->getBool("installer", "custom_install");
+    PartitionTable flash_ptable;
+    if (p_count == 1)
+    {
+        if (!flash_ptable.load())
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(FlashStatus::ERROR_PARTITION_TABLE);
+            return false;
+        }
+    }
+    else
+    {
+        if (custom_install)
+        {
+            if (!flash_ptable.load())
+            {
+                cleanup_client();
+                free_buffers();
+                _handle_installation_error(FlashStatus::ERROR_PARTITION_TABLE);
+                return false;
+            }
+        }
+        else
+        {
+            if (!_show_confirmation_dialog(std::format("Image bundle has {} partitions", p_count), "Erase other apps?"))
+            {
+                _data.state = state_browsing;
+                cleanup_client();
+                free_buffers();
+                return false;
+            }
+            if (!flash_ptable.makeDefaultPartitions())
+            {
+                cleanup_client();
+                free_buffers();
+                _handle_installation_error(FlashStatus::ERROR_UNKNOWN);
+                return false;
+            }
+        }
+    }
+
+    struct StreamTarget
+    {
+        size_t src_offset = 0;
+        size_t size = 0;
+        esp_partition_info_t flash_info = {};
+        esp_partition_t update_partition = {};
+        std::string label;
+        std::string title;
+        size_t written = 0;
+        size_t first_block_copied = 0;
+        size_t first_block_len = 0;
+        uint8_t first_block[ENCRYPTED_BLOCK_SIZE];
+    };
+
+    std::vector<StreamTarget> targets;
+    targets.reserve(p_count);
+
+    esp_partition_info_t boot_partition_info = {};
+    bool has_boot_partition = false;
+    size_t p_index = 0;
+
+    for (const auto& partition : file_partitions)
+    {
+        uint8_t subtype = partition.subtype;
+        std::string label((const char*)&partition.label);
+        p_index++;
+
+        if (partition.type == ESP_PARTITION_TYPE_DATA)
+        {
+            if (partition.subtype == ESP_PARTITION_SUBTYPE_DATA_OTA)
+            {
+                _installation_progress_callback(-1, "Skipping OTADATA...", this);
+                delay(500);
+                continue;
+            }
+            else if (partition.subtype == ESP_PARTITION_SUBTYPE_DATA_PHY)
+            {
+                _installation_progress_callback(-1, "Skipping PHY...", this);
+                delay(500);
+                continue;
+            }
+        }
+        else if (partition.type == ESP_PARTITION_TYPE_APP)
+        {
+            if (has_boot_partition)
+            {
+                _installation_progress_callback(-1, "Skipping OTA...", this);
+                delay(500);
+                continue;
+            }
+            subtype = flash_ptable.getNextOTA();
+            if (subtype == ESP_PARTITION_SUBTYPE_ANY)
+            {
+                cleanup_client();
+                _handle_installation_error(FlashStatus::ERROR_PARTITION_ADD);
+                return false;
+            }
+            label = app_name;
+        }
+
+        std::string subtype_str = PartitionTable::getSubtypeString(partition.type, partition.subtype);
+        if (p_count > 1 && custom_install &&
+            !UTILS::UI::show_confirmation_dialog(_data.hal,
+                                                 "Confirm custom install",
+                                                 std::format("{}: {}?", subtype_str, label)))
+        {
+            _installation_progress_callback(-1, std::format("Skipping {}...", subtype_str).c_str(), this);
+            delay(500);
+            continue;
+        }
+
+        size_t free_space = flash_ptable.getFreeSpace(partition.type);
+        if (free_space < partition.pos.size)
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(FlashStatus::ERROR_INSUFFICIENT_SPACE);
+            return false;
+        }
+
+        esp_partition_info_t* pi =
+            flash_ptable.addPartition(partition.type, subtype, label, 0, partition.pos.size, partition.flags);
+        if (pi == nullptr)
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(FlashStatus::ERROR_UNKNOWN);
+            return false;
+        }
+
+        size_t data_size = partition.pos.size;
+        if (partition.pos.offset >= file_size)
+        {
+            ESP_LOGW(TAG,
+                     "Skipping partition %s: no data in file (offset 0x%08lx >= file_size 0x%08lx)",
+                     label.c_str(),
+                     (uint32_t)partition.pos.offset,
+                     file_size);
+            continue;
+        }
+        size_t remaining = file_size - partition.pos.offset;
+        if (remaining < data_size)
+        {
+            ESP_LOGW(TAG,
+                     "Partition %s truncated by file size: expected 0x%08lx bytes, got 0x%08lx bytes",
+                     label.c_str(),
+                     (uint32_t)partition.pos.size,
+                     remaining);
+            data_size = remaining;
+        }
+        if (data_size == 0)
+        {
+            ESP_LOGW(TAG, "Skipping partition %s: zero data size", label.c_str());
+            continue;
+        }
+
+        StreamTarget target;
+        target.src_offset = partition.pos.offset;
+        target.size = data_size;
+        target.flash_info = *pi;
+        target.label = label;
+        if (p_count > 1)
+        {
+            target.title = std::format("{} / {}: {} {}KB", p_index, p_count, label, (uint32_t)(target.size / 1024));
+        }
+        else
+        {
+            target.title = app_name;
+        }
+
+        target.update_partition = {.flash_chip = esp_flash_default_chip,
+                                   .type = (esp_partition_type_t)pi->type,
+                                   .subtype = (esp_partition_subtype_t)pi->subtype,
+                                   .address = pi->pos.offset,
+                                   .size = pi->pos.size,
+                                   .erase_size = SPI_FLASH_SEC_SIZE,
+                                   .label = {0},
+                                   .encrypted = false,
+                                   .readonly = false};
+        strlcpy((char*)&target.update_partition.label, (const char*)&pi->label, sizeof(target.update_partition.label));
+
+        target.first_block_len = std::min((size_t)ENCRYPTED_BLOCK_SIZE, target.size);
+        memset(target.first_block, 0, sizeof(target.first_block));
+
+        targets.push_back(target);
+
+        if (partition.type == ESP_PARTITION_TYPE_APP && !has_boot_partition)
+        {
+            boot_partition_info = *pi;
+            has_boot_partition = true;
+        }
+    }
+
+    if (targets.empty())
+    {
+        _data.state = state_browsing;
+        cleanup_client();
+        free_buffers();
+        return false;
+    }
+
+    std::sort(targets.begin(),
+              targets.end(),
+              [](const StreamTarget& a, const StreamTarget& b) { return a.src_offset < b.src_offset; });
+
+    size_t target_index = 0;
+    size_t stream_offset = 0;
+
+    auto prepare_partition = [&](StreamTarget& target) -> FlashStatus
+    {
+        _data.install_title = target.title;
+        _installation_progress_callback(-1, "Erasing partition...", this);
+        delay(500);
+        esp_err_t erase_err = esp_partition_erase_range(&target.update_partition, 0, target.update_partition.size);
+        if (erase_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to erase partition: %s", esp_err_to_name(erase_err));
+            return FlashStatus::ERROR_FLASH_WRITE;
+        }
+        return FlashStatus::SUCCESS;
+    };
+
+    auto process_chunk = [&](uint8_t* data, size_t len, size_t chunk_offset) -> FlashStatus
+    {
+        size_t offset = 0;
+        while (offset < len)
+        {
+            if (target_index >= targets.size())
+            {
+                return FlashStatus::SUCCESS;
+            }
+
+            StreamTarget& target = targets[target_index];
+            size_t target_start = target.src_offset;
+            size_t target_end = target.src_offset + target.size;
+            size_t current_offset = chunk_offset + offset;
+
+            if (current_offset < target_start)
+            {
+                size_t skip = std::min(len - offset, target_start - current_offset);
+                offset += skip;
+                continue;
+            }
+
+            if (current_offset >= target_end)
+            {
+                target_index++;
+                continue;
+            }
+
+            size_t in_target_offset = current_offset - target_start;
+            size_t write_len = std::min(len - offset, target_end - current_offset);
+            if (in_target_offset != target.written)
+            {
+                ESP_LOGE(TAG, "Stream offset mismatch: expected %zu, got %zu", target.written, in_target_offset);
+                return FlashStatus::ERROR_FILE_READ;
+            }
+
+            if (target.written == 0)
+            {
+                FlashStatus prep_status = prepare_partition(target);
+                if (prep_status != FlashStatus::SUCCESS)
+                {
+                    return prep_status;
+                }
+            }
+
+            uint8_t* write_ptr = data + offset;
+            if (target.first_block_copied < target.first_block_len)
+            {
+                size_t to_copy = std::min(target.first_block_len - target.first_block_copied, write_len);
+                memcpy(target.first_block + target.first_block_copied, write_ptr, to_copy);
+                memset(write_ptr, 0xFF, to_copy);
+                target.first_block_copied += to_copy;
+            }
+
+            if (!is_block_empty(write_ptr, write_len))
+            {
+                esp_err_t write_err = esp_partition_write(&target.update_partition, target.written, write_ptr, write_len);
+                if (write_err != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Failed to write to flash: %s", esp_err_to_name(write_err));
+                    return FlashStatus::ERROR_FLASH_WRITE;
+                }
+            }
+
+            target.written += write_len;
+            std::string status = format_size(target.written, target.size);
+            _installation_progress_callback((target.written * 100) / target.size, status.c_str(), this);
+
+            if (target.written >= target.size)
+            {
+                if (target.first_block_copied < target.first_block_len)
+                {
+                    return FlashStatus::ERROR_FILE_READ;
+                }
+                esp_err_t first_err =
+                    esp_partition_write(&target.update_partition, 0, target.first_block, target.first_block_len);
+                if (first_err != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Failed to write first block: %s", esp_err_to_name(first_err));
+                    return FlashStatus::ERROR_FLASH_WRITE;
+                }
+                target_index++;
+            }
+
+            offset += write_len;
+        }
+        return FlashStatus::SUCCESS;
+    };
+
+    FlashStatus stream_status = process_chunk(prefix_buffer, prefix_size, stream_offset);
+    if (stream_status != FlashStatus::SUCCESS)
+    {
+        cleanup_client();
+        free_buffers();
+        _handle_installation_error(stream_status);
+        return false;
+    }
+    stream_offset = total_read;
+
+    while (total_read < file_size)
+    {
+        int bytes_read = esp_http_client_read(client, (char*)io_buffer, FILE_DOWNLOAD_BUFFER_SIZE);
+        if (bytes_read <= 0)
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(FlashStatus::ERROR_FILE_READ);
+            return false;
+        }
+
+        total_read += bytes_read;
+        stream_status = process_chunk(io_buffer, (size_t)bytes_read, stream_offset);
+        if (stream_status != FlashStatus::SUCCESS)
+        {
+            cleanup_client();
+            free_buffers();
+            _handle_installation_error(stream_status);
+            return false;
+        }
+        stream_offset += (size_t)bytes_read;
+    }
+
+    cleanup_client();
+    free_buffers();
+
+    if (target_index < targets.size())
+    {
+        _handle_installation_error(FlashStatus::ERROR_FILE_READ);
+        return false;
+    }
+
+    _installation_progress_callback(-1, "Saving PT...", this);
+    delay(500);
+    flash_ptable.save();
+
+    if (has_boot_partition && _data.hal->settings()->getBool("installer", "run_on_install"))
+    {
+        _installation_progress_callback(-1, "Making bootable...", this);
+        delay(500);
+        FlashStatus status = set_boot_partition(&boot_partition_info);
+        if (status != FlashStatus::SUCCESS)
+        {
+            _handle_installation_error(status);
+            return false;
+        }
+    }
+
+    _installation_progress_callback(100, std::format("Done: {} sec", (uint32_t)((millis() - start_time) / 1000)).c_str(), this);
+    delay(2000);
+    _handle_installation_complete();
+    return true;
 }

@@ -19,6 +19,9 @@
 #include "status.h"
 
 #define TARGET_CHIP_ID ESP_CHIP_ID_ESP32S3
+// Buffer size for reading/writing firmware in chunks
+#define FLASH_BUFFER_SIZE (4 * 1024) // 4KB chunks
+#define ENCRYPTED_BLOCK_SIZE 16      // First 16 bytes are special (magic byte, etc.)
 
 namespace UTILS
 {
