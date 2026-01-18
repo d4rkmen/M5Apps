@@ -261,6 +261,8 @@ namespace HAL
             }
         }
         ESP_LOGD(TAG, "Deinitializing USB");
+        usb_host_device_free_all();
+        msc_host_uninstall();
         vTaskDelay(pdMS_TO_TICKS(10)); // Give clients some time to uninstall
         ESP_ERROR_CHECK(usb_host_uninstall());
         vTaskDelete(NULL);
