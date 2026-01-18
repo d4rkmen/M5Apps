@@ -62,11 +62,14 @@ public:
 
             _light_instance.config(cfg);
             _panel_instance.setLight(&_light_instance);
+            // turn off the screen before initialization to avoid flickering
+            setBrightness(0);
         }
 
         setPanel(&_panel_instance);
         // initialize the display
         init();
         setRotation(1);
+        clear();
     }
 };
