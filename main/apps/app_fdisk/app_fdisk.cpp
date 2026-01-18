@@ -571,7 +571,7 @@ void AppFdisk::_delete_partition()
     {
         if (UTILS::UI::show_message_dialog(_data.hal, "Partition deleted", "restart in", 5000) == 0)
         {
-            reboot_device();
+            _data.hal->reboot();
         }
     }
     else

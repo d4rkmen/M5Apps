@@ -82,6 +82,7 @@ namespace HAL
         }
         uint8_t getBatLevel(float voltage) override;
         float getBatVoltage() override;
+        void reboot() override;
 
     public:
     };

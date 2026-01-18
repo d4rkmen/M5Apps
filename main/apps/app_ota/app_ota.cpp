@@ -18,8 +18,7 @@ void OtaApp::onCreate()
     if (esp_ota_set_boot_partition(_partition) == ESP_OK)
     {
         ESP_LOGI(TAG, "Boot partition set successfully, restarting...");
-        delay(100);
-        esp_restart();
+        _data.hal->reboot();
     }
     else
     {

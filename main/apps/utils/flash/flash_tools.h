@@ -73,11 +73,6 @@ namespace UTILS
                                     void* arg_cb = nullptr);
 
         /**
-         * @brief Reboot the device
-         */
-        void reboot_device();
-
-        /**
          * @brief Get string representation of flash status
          *
          * @param status Flash status enum value

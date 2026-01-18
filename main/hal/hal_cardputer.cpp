@@ -159,3 +159,12 @@ uint8_t HalCardputer::getBatLevel(float voltage)
 }
 
 float HalCardputer::getBatVoltage() { return static_cast<float>(_battery->get_voltage()); }
+
+void HalCardputer::reboot()
+{
+    ESP_LOGW(TAG, "Rebooting...");
+    wifi()->set_status_callback(nullptr);
+    delay(100);
+    led()->off();
+    esp_restart();
+}

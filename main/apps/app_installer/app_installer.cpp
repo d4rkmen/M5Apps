@@ -1545,7 +1545,7 @@ void AppInstaller::_handle_installation_complete()
 
     if (result >= 0) // Button pressed or timeout
     {
-        reboot_device();
+        _data.hal->reboot();
     }
     else // Cancelled
     {

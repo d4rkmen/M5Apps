@@ -232,12 +232,6 @@ namespace UTILS
             return FlashStatus::SUCCESS;
         }
 
-        void reboot_device()
-        {
-            ESP_LOGW(TAG, "Rebooting device...");
-            esp_restart();
-        }
-
         const char* flash_status_to_string(FlashStatus status)
         {
             switch (status)

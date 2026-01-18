@@ -273,7 +273,7 @@ void Launcher::_wait_enter()
     if (need_restart)
     {
         ESP_LOGI(TAG, "Starting app from: %s", (char*)&ota_partition->label);
-        esp_restart();
+        _data.hal->reboot();
     }
     if (has_boot_sound && has_bootable_app)
     {
