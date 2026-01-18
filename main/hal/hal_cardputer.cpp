@@ -86,7 +86,7 @@ void HalCardputer::_init_wifi()
     _wifi->set_status_callback(
         [this](wifi_status_t status)
         {
-            // ESP_LOGI(TAG, "WiFi status: %d", status);
+            ESP_LOGD(TAG, "WiFi status: %d, rssi: %d", status, _wifi->get_rssi());
             if (!_settings->getBool("system", "use_led"))
             {
                 return;

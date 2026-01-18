@@ -164,11 +164,6 @@ namespace HAL
             return false;
         }
 
-        // Enable promiscuous mode for RSSI updates
-        esp_wifi_set_promiscuous_rx_cb(&WiFi::_wifi_promiscuous_rx_cb);
-        esp_wifi_set_promiscuous(true);
-        ESP_LOGD(TAG, "Promiscuous mode enabled for RSSI updates");
-
         // Create default event loop if not already created
         err = esp_event_loop_create_default();
         if (err != ESP_OK)
@@ -250,6 +245,16 @@ namespace HAL
             return false;
         }
 
+        // Enable promiscuous mode for RSSI updates
+        if ((esp_wifi_set_promiscuous_rx_cb(&WiFi::_wifi_promiscuous_rx_cb) == ESP_OK) &&
+            (esp_wifi_set_promiscuous(true) == ESP_OK))
+        {
+            ESP_LOGD(TAG, "Promiscuous mode enabled for RSSI updates");
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to enable promiscuous mode for RSSI updates");
+        }
         _initialized = true;
         _status = WIFI_STATUS_DISCONNECTED;
 
