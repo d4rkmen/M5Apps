@@ -93,7 +93,7 @@ namespace MOONCAKE
                 InstallerState_t state = state_source;
 
                 // File listing data
-                std::vector<FileItem_t> file_list;
+                std::vector<FileItem_t*> file_list;
                 std::vector<SelectItem_t> sources;
                 std::string current_path = "/";
                 std::string current_desc = "";
@@ -125,6 +125,7 @@ namespace MOONCAKE
             };
             Data_t _data;
             const FileItem_t BACK_DIR_ITEM = {"..", true, 0, "", ""};
+            void _clear_file_list();
             // Helper methods
             bool _has_extension(const std::string& filename, const std::string& ext);
             std::string _truncate_path(const std::string& path, int max_chars);

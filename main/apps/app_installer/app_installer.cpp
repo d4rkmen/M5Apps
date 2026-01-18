@@ -265,6 +265,7 @@ void AppInstaller::onDestroy()
     scroll_text_free(&_data.desc_scroll_ctx);
     // Free hint text context
     hl_text_free(&_data.hint_hl_ctx);
+    _clear_file_list();
 }
 
 void AppInstaller::_unmount_sdcard()
@@ -282,6 +283,15 @@ void AppInstaller::_unmount_usb()
     _data.hal->usb()->unmount();
     ESP_LOGI(TAG, "USB unmounted");
     _data.usb_initialized = false;
+}
+
+void AppInstaller::_clear_file_list()
+{
+    for (auto* item : _data.file_list)
+    {
+        delete item;
+    }
+    _data.file_list.clear();
 }
 
 void AppInstaller::_handle_source_selection()
@@ -514,12 +524,12 @@ bool AppInstaller::_has_extension(const std::string& filename, const std::string
 
 void AppInstaller::_update_source_file_list()
 {
-    _data.file_list.clear();
+    _clear_file_list();
 
     // Add parent directory entry if not in root
     if (_data.current_path.find('/', 1) != std::string::npos)
     {
-        _data.file_list.push_back(BACK_DIR_ITEM);
+        _data.file_list.push_back(new FileItem_t(BACK_DIR_ITEM));
     }
 
     switch (_data.source_type)
@@ -595,9 +605,9 @@ void AppInstaller::_update_file_list()
 
         // Append folders first, then files
         for (const auto& f : folders)
-            _data.file_list.push_back(f);
+            _data.file_list.push_back(new FileItem_t(f));
         for (const auto& f : files)
-            _data.file_list.push_back(f);
+            _data.file_list.push_back(new FileItem_t(f));
     }
 }
 
@@ -705,9 +715,9 @@ bool AppInstaller::_render_file_list()
 
         _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
         _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
-        std::string sizeInfo = _data.file_list[_data.selected_file].is_dir || (_data.source_type == source_cloud)
+        std::string sizeInfo = _data.file_list[_data.selected_file]->is_dir || (_data.source_type == source_cloud)
                                    ? ">>"
-                                   : PartitionTable::formatSize(_data.file_list[_data.selected_file].size);
+                                   : PartitionTable::formatSize(_data.file_list[_data.selected_file]->size);
         _data.hal->canvas()->drawString(
             std::format("{} / {} : {}", _data.selected_file + 1, _data.file_list.size(), sizeInfo).c_str(),
             5,
@@ -719,10 +729,10 @@ bool AppInstaller::_render_file_list()
 
         for (int i = _data.scroll_offset; i < _data.file_list.size() && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
         {
-            bool is_dir = _data.file_list[i].is_dir;
-            std::string display_name = _data.file_list[i].name;
+            bool is_dir = _data.file_list[i]->is_dir;
+            std::string display_name = _data.file_list[i]->name;
 
-            if (_data.file_list[i].is_dir)
+            if (_data.file_list[i]->is_dir)
             {
                 display_name = "[" + display_name + "]";
             }
@@ -948,11 +958,11 @@ bool AppInstaller::_handle_file_selection()
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
 
-            const FileItem_t& selected_item = _data.file_list[_data.selected_file];
-            if (selected_item.is_dir)
+            const FileItem_t* selected_item = _data.file_list[_data.selected_file];
+            if (selected_item->is_dir)
             {
                 std::string new_path;
-                if (selected_item.name == "..")
+                if (selected_item->name == "..")
                 {
                     // Go to parent directory
                     size_t last_slash = _data.current_path.find_last_of('/');
@@ -1045,13 +1055,13 @@ bool AppInstaller::_handle_file_selection()
                     }
                     // Show confirmation dialog for .bin files
                 }
-                else if (_show_confirmation_dialog(selected_item.name, "Install the app?"))
+                else if (_show_confirmation_dialog(selected_item->name, "Install the app?"))
                 {
                     // Get the full path to the firmware file
                     std::string filepath = _data.current_path;
                     if (filepath.back() != '/')
                         filepath += '/';
-                    filepath += selected_item.fname;
+                    filepath += selected_item->fname;
                     // Start the installation process
                     _install_firmware(filepath);
                 }
@@ -1177,7 +1187,7 @@ void AppInstaller::_navigate_directory(const std::string& path)
             // Find this segment in the file list
             for (size_t i = 0; i < _data.file_list.size(); i++)
             {
-                if (_data.file_list[i].name == last_segment)
+                if (_data.file_list[i]->name == last_segment)
                 {
                     _data.selected_file = i;
                     // Adjust scroll offset if needed
@@ -1263,8 +1273,8 @@ bool AppInstaller::_render_scrolling_list()
     }
 
     // Get the text to display (file or directory name)
-    std::string display_name = _data.file_list[_data.selected_file].name;
-    if (_data.file_list[_data.selected_file].is_dir)
+    std::string display_name = _data.file_list[_data.selected_file]->name;
+    if (_data.file_list[_data.selected_file]->is_dir)
     {
         display_name = "[" + display_name + "]";
     }
@@ -1302,7 +1312,7 @@ bool AppInstaller::_render_scrolling_desc()
         return false;
     }
     std::string desc =
-        _data.state == state_source ? _data.sources[_data.selected_source].hint : _data.file_list[_data.selected_file].info;
+        _data.state == state_source ? _data.sources[_data.selected_source].hint : _data.file_list[_data.selected_file]->info;
     // no info, use current desc
     if (desc.length() == 0)
     {
@@ -1699,11 +1709,11 @@ void AppInstaller::_update_cloud_file_list()
             //          _data.file_list.size());
             if (name && descr)
             {
-                _data.file_list.push_back({name->valuestring,
+                _data.file_list.push_back(new FileItem_t({name->valuestring,
                                            true, // is_dir
                                            0,    // size
                                            "",   // fname
-                                           descr->valuestring});
+                                                          descr->valuestring}));
             }
         }
     }
@@ -1722,11 +1732,11 @@ void AppInstaller::_update_cloud_file_list()
             if (name && fname)
             {
                 // ESP_LOGI(TAG, "Free heap: %d, stack: %d", esp_get_free_heap_size(), _free_stack_size());
-                _data.file_list.push_back({name->valuestring,
+                _data.file_list.push_back(new FileItem_t({name->valuestring,
                                            false,                                 // is_dir
                                            (uint64_t)(size ? size->valueint : 0), // size
                                            fname ? fname->valuestring : "",       // fname
-                                           descr ? descr->valuestring : ""});
+                                                          descr ? descr->valuestring : ""}));
             }
         }
     }
