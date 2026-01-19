@@ -1,5 +1,13 @@
 Install with M5Burner!
 
+v2.2
+
+- INSTALLER: New feature: direct flashing (no SD card required anymore for cloud source installation)
+- INSTALLER: Fixed heap allocation during cloud source browsing
+- HAL: Turn off the LED before reboot to avoid ON state after reboot
+- WiFi: Fixed missing signal level update
+- DISPLAY: Turn off the screen before initialization to avoid flickering
+
 v2.1
 
 - M5GFX dependency removed, using LovyanGFX 1.2.7 instead
