@@ -34,6 +34,8 @@ void Launcher::_boot_anim()
     _data.hal->display()->setFont(FONT_16);
     _data.hal->display()->setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     _data.hal->display()->drawRightString("M5Apps v" BUILD_NUMBER, pos_x, pos_y + 14);
+    // turn on the screen
+    _data.hal->display()->setBrightness(_data.hal->settings()->getNumber("system", "brightness"));
     delay(500);
     // If software restart
     if (esp_reset_reason() != ESP_RST_POWERON)
