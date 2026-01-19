@@ -15,6 +15,7 @@
 #define delay(ms) vTaskDelay(pdMS_TO_TICKS(ms))
 
 #define RGB_LED_GPIO 21
+#define LORA_NSS_PIN 5
 
 extern const uint8_t usb_connected_wav_start[] asm("_binary_usb_connected_wav_start");
 extern const uint8_t usb_connected_wav_end[] asm("_binary_usb_connected_wav_end");

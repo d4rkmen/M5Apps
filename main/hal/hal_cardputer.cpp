@@ -129,7 +129,9 @@ void HalCardputer::_init_led()
 void HalCardputer::init()
 {
     ESP_LOGI(TAG, "HAL init");
-
+    // set LoRa NSS pin high to disable LoRa module
+    gpio_set_direction((gpio_num_t)LORA_NSS_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)LORA_NSS_PIN, 1);
     _init_i2c();
     _init_display();
     _init_keyboard();
