@@ -50,6 +50,7 @@ _message_callback(const mesh_packet_header_t* header, const uint8_t* payload, ui
         {
             app->playMessageSound();
             app->needRefresh();
+            app->wakeUpScreen();
         }
         else if (header->type == MESH_PACKET_TYPE_MESSAGE)
         {
@@ -61,6 +62,7 @@ _message_callback(const mesh_packet_header_t* header, const uint8_t* payload, ui
             {
                 app->playMessageSound();
                 app->needRefresh();
+                app->wakeUpScreen();
             }
         }
         else if (header->type == MESH_PACKET_TYPE_HELLO)
@@ -1377,7 +1379,10 @@ bool AppFlood::_handle_devices_navigation()
                 {
                     UTILS::UI::show_error_dialog(_data.hal, "Error", "Failed to add channel");
                 }
+                _data.need_refresh = true;
             }
+            _data.need_render = true;
+            changed = true;
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
         {
@@ -1388,6 +1393,7 @@ bool AppFlood::_handle_devices_navigation()
             {
                 auto& d = _data.devices[_data.selected_index];
                 _data.chat_with = d.name;
+                _data.chat_role = d.role;
                 memcpy(_data.chat_mac, d.mac, 6);
                 // show confirmation dialog
                 bool result = UTILS::UI::show_confirmation_dialog(_data.hal,
@@ -1404,11 +1410,8 @@ bool AppFlood::_handle_devices_navigation()
                                                      "Error",
                                                      std::format("Failed to delete {}", _data.chat_with).c_str());
                     }
-                    else
-                    {
-                        // reload data, item deleted
-                        _data.need_refresh = true;
-                    }
+                    // reload data, item deleted
+                    _data.need_refresh = true;
                 }
                 // render anyway to restore from dialog
                 _data.need_render = true;
@@ -1715,6 +1718,10 @@ bool AppFlood::_render_chat_hint()
                           TFT_WHITE,
                           THEME_COLOR_BG);
 }
+
+void AppFlood::needRefresh() { _data.need_refresh = true; }
+
+void AppFlood::wakeUpScreen() { _data.hal->keyboard()->resetLastPressedTime(); }
 
 void AppFlood::goLastMessage()
 {

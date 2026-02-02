@@ -115,7 +115,8 @@ namespace MOONCAKE::APPS
         void onResume() override;
         void onRunning() override;
         void onDestroy() override;
-        void needRefresh() { _data.need_refresh = true; }
+        void needRefresh();
+        void wakeUpScreen();
         void goLastMessage();
         void playMessageSound() { _data.hal->playMessageSound(); }
         void playMessageSentSound() { _data.hal->playMessageSentSound(); }
