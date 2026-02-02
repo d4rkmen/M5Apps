@@ -482,10 +482,9 @@ esp_err_t flood_stop(void)
 
     s_flood_running = false;
 
-    if (s_flood_task_handle != NULL)
+    while (s_flood_task_handle != NULL)
     {
-        vTaskDelete(s_flood_task_handle);
-        s_flood_task_handle = NULL;
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     ESP_LOGI(TAG, "Stopped successfully");
@@ -1206,9 +1205,11 @@ static void flood_task(void* pvParameter)
         }
     }
 
+    s_flood_task_handle = NULL;
     ESP_LOGI(TAG, "Flood task ended");
     vTaskDelete(NULL);
 }
+
 static void get_context_path(char* path) { strncpy(path, s_context_path, MAXNAMLEN); }
 
 static esp_err_t get_devices_path(char* path)
@@ -3699,14 +3700,12 @@ esp_err_t flood_add_channel(const char* channel_name)
     channel_volatile.last_seen = 0;
     channel_volatile.unread_messages = 0;
     ret = flood_update_channel_volatile_internal(channel_name, &channel_volatile);
-    if (ret != ESP_OK)
-    {
-        xSemaphoreGive(s_flood_mutex);
-        return ret;
-    }
     xSemaphoreGive(s_flood_mutex);
-    ESP_LOGI(TAG, "Added channel: %s", channel_name);
-    return ESP_OK;
+    if (ret == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Added channel: %s", channel_name);
+    }
+    return ret;
 }
 
 esp_err_t flood_remove_channel(const char* channel_name)
@@ -3750,19 +3749,14 @@ esp_err_t flood_remove_channel(const char* channel_name)
     }
 
     // Remove channel directory
-    if (rmdir(channel_path) == 0)
-    {
-        ESP_LOGI(TAG, "Removed channel: %s", channel_name);
-        ret = ESP_OK;
-    }
-    else
+    if (rmdir(channel_path) != 0)
     {
         ESP_LOGW(TAG, "Failed to remove channel directory: %s", channel_path);
-        ret = ESP_FAIL;
     }
     // Remove channel from volatile list
-    flood_remove_channel_volatile_internal(channel_name);
+    ret = flood_remove_channel_volatile_internal(channel_name);
 
+    ESP_LOGI(TAG, "Removed channel: %s", channel_name);
     xSemaphoreGive(s_flood_mutex);
     return ret;
 }
