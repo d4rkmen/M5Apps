@@ -1,5 +1,13 @@
 Install with M5Burner!
 
+v2.3
+
+- exFAT filesystem support added for SD card and USB drive. Now can use huge volumes media (not limited by 32Gb)
+- LED activity indicator added for system events (installation, file operations, etc)
+- FLOOD: Fixed screen wake up on message received in chat view
+- FLOOD: Fixed device and channel deletion issue
+- FLOOD: Fixed view refresh on new channel
+
 v2.2
 
 - INSTALLER: New feature: direct flashing (no SD card required anymore for cloud source installation)

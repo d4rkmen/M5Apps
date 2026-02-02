@@ -41,8 +41,8 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 ### System Features
 
 - **WiFi Support**: Connect to networks, scan available networks, remote repository access
-- **USB MSC Support**: Access USB mass storage devices (FAT32)
-- **SD Card Support**: Full SD card file system access (FAT32)
+- **USB MSC Support**: Access USB mass storage devices (FAT32, exFAT)
+- **SD Card Support**: Full SD card file system access (FAT32, exFAT)
 - **Screenshot Capability**: Capture screenshots with CTRL + SPACE key combination
 - **LED Indicators**: System event notifications (WiFi heartbeat, etc.)
 - **Screen Dimming**: Automatic screen dimming with timeout
@@ -60,7 +60,14 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 
 ### Development Environment
 
-- **ESP-IDF**: v5.5.1
+- **ESP-IDF**: v5.5.2
+  **PATCH** required to enable exFAT filesystem support in ESP-IDF components:
+  `esp-idf\components\fatfs\src\ffconf.h`
+
+```c
+#define FF_LBA64		1
+#define FF_FS_EXFAT		1
+```
 
 ### Hardware
 
