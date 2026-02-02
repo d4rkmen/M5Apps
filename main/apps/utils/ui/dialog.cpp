@@ -353,6 +353,7 @@ namespace UTILS
 
         void show_progress(HAL::Hal* hal, const std::string& title, int progress, const std::string& message)
         {
+            hal->flash_activity();
             hal->canvas()->setFont(FONT_16);
             // Dialog dimensions - same as regular dialog
             int dialog_x = (hal->canvas()->width() - DIALOG_WIDTH) / 2;

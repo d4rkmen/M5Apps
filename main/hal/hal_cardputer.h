@@ -84,6 +84,8 @@ namespace HAL
         uint8_t getBatLevel(float voltage) override;
         float getBatVoltage() override;
         void reboot() override;
+        void flash_activity() override;
+        void led_activity(const Color& color);
 
     public:
     };

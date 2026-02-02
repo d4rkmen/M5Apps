@@ -97,6 +97,7 @@ namespace HAL
         virtual void playMessageSound() {}
         virtual void playMessageSentSound() {}
         virtual void reboot() {}
+        virtual void flash_activity() {}
 
         virtual uint8_t getBatLevel(float voltage) { return 100; }
         virtual float getBatVoltage() { return 4.15; }

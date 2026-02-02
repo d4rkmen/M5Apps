@@ -170,3 +170,16 @@ void HalCardputer::reboot()
     led()->off();
     esp_restart();
 }
+
+void HalCardputer::led_activity(const Color& color)
+{
+    static uint32_t timestamp = 0;
+    uint32_t now = millis();
+    if (now - timestamp > 50)
+    {
+        timestamp = now;
+        _led->blink_once(color, 10);
+    }
+}
+
+void HalCardputer::flash_activity() { led_activity({0xFF, 0x6A, 0x00}); }
