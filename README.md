@@ -61,7 +61,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 ### Development Environment
 
 - **ESP-IDF**: v5.5.2
-  **PATCH** required to enable exFAT filesystem support in ESP-IDF components:
+- **PATCH** required to enable exFAT filesystem support in ESP-IDF components:
   `esp-idf\components\fatfs\src\ffconf.h`
 
 ```c
@@ -88,7 +88,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 
 ### Prerequisites
 
-Install ESP-IDF v5.5.1 following the [official guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32s3/get-started/)
+Install ESP-IDF following the [official guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.2/esp32s3/get-started/)
 
 ### Build Steps
 
@@ -185,7 +185,7 @@ apps_app   app   factory  0x10000  0x180000
 3. Select the app you want to install
 4. Follow the installation prompts
 
-   **Cloud source**: has a mirror of `M5Burner` CardPuter category, refreshing automtically once an hour. `TOP-20` is the list of tested and usefull apps by the community. Remote files are downloaded in `/sdcard/downloads` (configurable in settings) before installation and can be re-installed manually later.
+   **Cloud source**: has a mirror of `M5Burner` CardPuter category, refreshing automtically once an hour. `TOP-20` is the list of tested and usefull apps by the community. Remote files are flashed to the device directly, without need to download to the SD card or USB drive.
    Apps distributed as single partition images are flashing to the device directly. Multiple partition images are also supported. User can remove all installed apps, or use `Custom install` option in settings to install ony selected partitions of multiple partition images (confirmation request dialog is shown).
 
 ### Settings
@@ -240,16 +240,6 @@ M5Apps uses the **Mooncake** application framework, which provides:
 ## Version History
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
-
-### Current Version: 2.0
-
-Key features in v2.0:
-
-- CardPuter ADV support
-- New FLOOD app (mesh chat)
-- LED indicator for system events
-- Screenshot capability
-- Improved boot optimization
 
 ## Contributing
 
