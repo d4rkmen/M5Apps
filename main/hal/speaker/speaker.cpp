@@ -6,7 +6,6 @@
 #include "hal.h"
 #include <cstring>
 #include <algorithm>
-#include <driver/i2c_master.h>
 #include "esp_log.h"
 
 static const char* TAG = "SPEAKER";
@@ -17,7 +16,7 @@ namespace HAL
     const uint8_t Speaker::_default_tone_wav[16] = {
         0x80, 0xB0, 0xDA, 0xF6, 0xFF, 0xF6, 0xDA, 0xB0, 0x80, 0x50, 0x26, 0x0A, 0x00, 0x0A, 0x26, 0x50};
 
-    Speaker::Speaker(HAL::Hal* hal) : _hal(hal), _board_type(hal->board_type()), _dev_handle(nullptr) { begin(); }
+    Speaker::Speaker(HAL::Hal* hal) : _hal(hal), _board_type(hal->board_type()) { begin(); }
 
     Speaker::~Speaker() { end(); }
 
@@ -30,26 +29,23 @@ namespace HAL
 
         if (!isEnabled())
         {
+            ESP_LOGW(TAG, "Speaker not enabled (no data_out pin)");
             return false;
         }
 
-        switch (_board_type)
+        if (_board_type == BoardType::CARDPUTER_ADV)
         {
-        case BoardType::CARDPUTER:
-            break;
-        case BoardType::CARDPUTER_ADV:
-            if (!_init_cardputer_adv(true))
+            if (!_hal->es8311() || !_hal->es8311()->speaker_enable())
             {
+                ESP_LOGE(TAG, "Failed to init codec");
                 return false;
             }
-            break;
-        case BoardType::AUTO_DETECT:
-            break;
         }
 
         // Setup I2S
         if (!_setup_i2s())
         {
+            ESP_LOGE(TAG, "Failed to setup I2S");
             return false;
         }
 
@@ -58,12 +54,11 @@ namespace HAL
             _task_semaphore = xSemaphoreCreateBinary();
         }
 
-        // Create speaker task (no semaphore needed, we use task notifications)
         BaseType_t result;
-        if (_cfg.task_pinned_core < 2)
+        if (_cfg.task_pinned_core < portNUM_PROCESSORS)
         {
             result = xTaskCreatePinnedToCore(spk_task,
-                                             "speaker_task",
+                                             "speaker_i2s",
                                              2048,
                                              this,
                                              _cfg.task_priority,
@@ -81,6 +76,7 @@ namespace HAL
         }
 
         _task_running = true;
+        ESP_LOGI(TAG, "Speaker started");
         return true;
     }
 
@@ -88,29 +84,27 @@ namespace HAL
     {
         if (!_task_running)
         {
+            ESP_LOGD(TAG, "end() called but not running");
             return;
         }
 
+        ESP_LOGI(TAG, "end() stopping speaker...");
         _task_running = false;
 
-        // Stop all channels
         stop();
 
-        // Wake up task to exit via task notification
         if (_task_handle)
         {
             xTaskNotifyGive(_task_handle);
-        }
-
-        // Wait for task to finish
-        if (_task_handle)
-        {
-            vTaskDelay(pdMS_TO_TICKS(100));
+            int retries = 200;
+            while (retries-- > 0 && eTaskGetState(_task_handle) != eSuspended)
+                vTaskDelay(pdMS_TO_TICKS(10));
+            if (retries <= 0)
+                ESP_LOGW(TAG, "end() TIMEOUT — spk_task may be stuck");
             vTaskDelete(_task_handle);
             _task_handle = nullptr;
         }
 
-        // Delete I2S channel
         if (_tx_chan)
         {
             i2s_channel_disable(_tx_chan);
@@ -118,81 +112,17 @@ namespace HAL
             _tx_chan = nullptr;
         }
 
-        switch (_board_type)
+        if (_board_type == BoardType::CARDPUTER_ADV && _hal->es8311())
         {
-        case BoardType::CARDPUTER:
-            break;
-        case BoardType::CARDPUTER_ADV:
-            _init_cardputer_adv(false);
-            break;
-        case BoardType::AUTO_DETECT:
-            break;
+            _hal->es8311()->speaker_disable();
         }
-        // Delete task semaphore
+
         if (_task_semaphore)
         {
             vSemaphoreDelete(_task_semaphore);
             _task_semaphore = nullptr;
         }
-    }
-
-    bool Speaker::_init_cardputer_adv(bool enabled)
-    {
-        struct RegValue
-        {
-            uint8_t value[2];
-        };
-        // const uint8_t REG_RESET = 0x00;
-        // const uint8_t REG_CLOCK_MANAGER = 0x01;
-        // const uint8_t REG_CLOCK_MANAGER_MCLK = 0x02;
-        // const uint8_t REG_CLOCK_MANAGER_MULT_PRE = 0x03;
-        // const uint8_t REG_SYSTEM = 0x0D;
-        // const uint8_t REG_SYSTEM_POWER_UP_ANALOG = 0x12;
-        // const uint8_t REG_SYSTEM_POWER_UP_DAC = 0x13;
-        // const uint8_t REG_SYSTEM_ENABLE_OUTPUT_TO_HP = 0x14;
-        // const uint8_t REG_DAC = 0x32;
-        const RegValue enable_data[] = {
-            {0x00, 0x80}, // 0x00 RESET/  CSM POWER ON
-            {0x01, 0xB5}, // 0x01 CLOCK_MANAGER/ MCLK=BCLK
-            {0x02, 0x18}, // 0x02 CLOCK_MANAGER/ MULT_PRE=3
-            {0x0D, 0x01}, // 0x0D SYSTEM/ Power up analog circuitry
-            {0x12, 0x00}, // 0x12 SYSTEM/ power-up DAC - NOT default
-            {0x13, 0x10}, // 0x13 SYSTEM/ Enable output to HP drive - NOT default
-            {0x32, 0xBF}, // 0x32 DAC/ DAC volume (0xBF == ±0 dB )
-            {0x37, 0x08}, // 0x37 DAC/ Bypass DAC equalizer - NOT default
-        };
-
-        // add or remove device to bus
-        esp_err_t ret;
-        if (enabled)
-        {
-            ret = _hal->i2c()->add_device(SPEAKER_I2C_ADDR, SPEAKER_I2C_FREQ_HZ, nullptr, &_dev_handle);
-            if (ret != ESP_OK)
-            {
-                ESP_LOGE(TAG, "Failed to add device to I2C bus");
-                return false;
-            }
-            for (auto& chunk : enable_data)
-            {
-                ESP_LOGD(TAG, "Writing to I2C device: 0x%02X = 0x%02X", chunk.value[0], chunk.value[1]);
-                ret = i2c_master_transmit(_dev_handle, chunk.value, 2, SPEAKER_I2C_TIMEOUT_MS);
-                if (ret != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "Failed to write to I2C device");
-                    return false;
-                }
-            }
-        }
-        else
-        {
-            ret = hal()->i2c()->remove_device(_dev_handle);
-            if (ret != ESP_OK)
-            {
-                ESP_LOGE(TAG, "Failed to remove device from I2C bus");
-                return false;
-            }
-        }
-        return true;
+        ESP_LOGI(TAG, "end() done");
     }
 
     bool Speaker::_setup_i2s(void)
@@ -231,15 +161,6 @@ namespace HAL
         };
 
         ret = i2s_channel_init_std_mode(_tx_chan, &std_cfg);
-        if (ret != ESP_OK)
-        {
-            i2s_del_channel(_tx_chan);
-            _tx_chan = nullptr;
-            return false;
-        }
-
-        // Enable I2S channel
-        ret = i2s_channel_enable(_tx_chan);
         if (ret != ESP_OK)
         {
             i2s_del_channel(_tx_chan);
@@ -745,50 +666,59 @@ namespace HAL
         Speaker* self = static_cast<Speaker*>(args);
         const size_t samples_per_frame = self->_cfg.dma_buf_len;
         const size_t buffer_size = samples_per_frame << self->_cfg.stereo;
-        // Allocate int32 mixing buffer for better precision
         self->mix_buf = new int32_t[buffer_size];
+
+        i2s_channel_enable(self->_tx_chan);
+
+        // Pre-fill all DMA buffers with silence so the codec sees zeros
+        // before we unmute it.
+        memset(self->mix_buf, 0, buffer_size * sizeof(int32_t));
+        for (size_t i = 0; i <= self->_cfg.dma_buf_count; ++i)
+        {
+            size_t bytes_written;
+            i2s_channel_write(self->_tx_chan, self->mix_buf, buffer_size * sizeof(int16_t), &bytes_written, pdMS_TO_TICKS(100));
+        }
+
+        if (self->_board_type == BoardType::CARDPUTER_ADV && self->_hal->es8311())
+            self->_hal->es8311()->speaker_unmute();
 
         uint8_t buf_cnt = 0;
         bool flg_nodata = false;
 
         while (self->_task_running)
         {
-            // Handle no-data state - send silence and wait
             if (flg_nodata)
             {
                 if (buf_cnt)
                 {
-                    // Decrement buffer count and wait
                     --buf_cnt;
-                    // wait time = 1ms + frame playback time
                     uint32_t wait_msec = 1 + (samples_per_frame * 1000 / self->_cfg.sample_rate);
                     flg_nodata = (0 == ulTaskNotifyTake(pdFALSE, pdMS_TO_TICKS(wait_msec)));
                 }
 
                 if (flg_nodata && 0 == buf_cnt)
                 {
-                    // Fill all DMA buffers with silence
-                    memset(self->mix_buf, 0, buffer_size * sizeof(int32_t));
+                    memset(self->mix_buf, 0, buffer_size * sizeof(int16_t));
                     size_t retry = self->_cfg.dma_buf_count + 1;
                     while (!ulTaskNotifyTake(pdTRUE, 0) && --retry)
                     {
                         size_t bytes_written;
                         i2s_channel_write(self->_tx_chan,
                                           self->mix_buf,
-                                          buffer_size * sizeof(int32_t),
+                                          buffer_size * sizeof(int16_t),
                                           &bytes_written,
                                           portMAX_DELAY);
                     }
 
                     if (!retry)
                     {
-                        // Wait for new data
+                        ESP_LOGD(TAG, "spk_task: entering idle wait");
                         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+                        ESP_LOGD(TAG, "spk_task: woke from idle wait, running=%d", self->_task_running);
                     }
                 }
             }
 
-            // Clear any pending notifications to avoid spinning too fast
             ulTaskNotifyTake(pdTRUE, 0);
 
             if (!self->_task_running)
@@ -801,20 +731,16 @@ namespace HAL
 
             if (self->_play_channel_bits.load() == 0)
             {
-                // No channels playing, send silence
                 memset(self->mix_buf, 0, buffer_size * sizeof(int32_t));
             }
             else
             {
-                // Mix channels
                 mix_samples = self->_mix_channels(samples_per_frame);
                 flg_nodata = mix_samples == 0;
             }
 
-            // Track buffer count
             if (!flg_nodata)
             {
-                // Write to I2S - this blocks until buffer space available
                 size_t bytes_to_send = mix_samples * sizeof(int16_t);
                 size_t bytes_total = 0;
                 do
@@ -830,7 +756,6 @@ namespace HAL
                     }
                     else
                     {
-                        // error, wait
                         ESP_LOGE(TAG, "I2S write error");
                         break;
                     }
@@ -843,8 +768,29 @@ namespace HAL
             }
         }
 
+        if (self->_board_type == BoardType::CARDPUTER_ADV && self->_hal->es8311())
+            self->_hal->es8311()->speaker_mute();
+
+        memset(self->mix_buf, 0, buffer_size * sizeof(int32_t));
+        for (size_t i = 0; i <= self->_cfg.dma_buf_count; ++i)
+        {
+            size_t bytes_written;
+            if (i2s_channel_write(self->_tx_chan,
+                                  self->mix_buf,
+                                  buffer_size * sizeof(int16_t),
+                                  &bytes_written,
+                                  pdMS_TO_TICKS(100)) != ESP_OK)
+            {
+                break;
+            }
+        }
+
         delete[] self->mix_buf;
-        vTaskDelete(nullptr);
+        if (self->_task_semaphore)
+        {
+            xSemaphoreGive(self->_task_semaphore);
+        }
+        vTaskSuspend(nullptr);
     }
 
 } // namespace HAL

@@ -17,6 +17,7 @@
 #include "sdcard/sdcard.h"
 #include "button/button.h"
 #include "speaker/speaker.h"
+#include "es8311/es8311.h"
 #include "usb/usb.h"
 #include "wifi/wifi.h"
 #include "led/led.h"
@@ -48,13 +49,15 @@ namespace HAL
         USB* _usb;
         WiFi* _wifi;
         LED* _led;
+        ES8311* _es8311;
         bool _sntp_adjusted;
         BoardType _board_type;
 
     public:
         Hal(SETTINGS::Settings* settings)
             : _settings(settings), _keyboard(nullptr), _i2c(nullptr), _battery(nullptr), _speaker(nullptr),
-              _homeButton(nullptr), _sdcard(nullptr), _usb(nullptr), _wifi(nullptr), _led(nullptr), _sntp_adjusted(false),
+              _homeButton(nullptr), _sdcard(nullptr), _usb(nullptr), _wifi(nullptr), _led(nullptr), _es8311(nullptr),
+              _sntp_adjusted(false),
               _board_type(BoardType::AUTO_DETECT)
         {
         }
@@ -74,6 +77,7 @@ namespace HAL
         inline Speaker* speaker() { return _speaker; }
         inline WiFi* wifi() { return _wifi; }
         inline LED* led() { return _led; }
+        inline ES8311* es8311() { return _es8311; }
 
         inline void setSntpAdjusted(bool isAdjusted) { _sntp_adjusted = isAdjusted; }
         inline bool isSntpAdjusted(void) { return _sntp_adjusted; }

@@ -10,18 +10,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/i2s_std.h"
-#include "driver/i2c_master.h"
 #include "hal/board.h"
 
-// Pin configuration macros for M5Cardputer
 #define SPEAKER_PIN_DATA_OUT 42
 #define SPEAKER_PIN_BCK 41
 #define SPEAKER_PIN_WS 43
 #define SPEAKER_I2S_PORT I2S_NUM_1
-#define SPEAKER_I2C_PORT I2C_NUM_1
-#define SPEAKER_I2C_ADDR 0x18
-#define SPEAKER_I2C_FREQ_HZ 400000
-#define SPEAKER_I2C_TIMEOUT_MS 1000
 
 namespace HAL
 {
@@ -241,8 +235,6 @@ namespace HAL
     private:
         HAL::Hal* _hal;
         BoardType _board_type;
-        // i2c_master_bus_handle_t _bus_handle;
-        i2c_master_dev_handle_t _dev_handle;
         static constexpr const size_t CHANNELS_NUM = 8;
         static const uint8_t _default_tone_wav[16];
         int32_t* mix_buf = nullptr;
@@ -340,14 +332,6 @@ namespace HAL
          * @brief Mix audio channels
          */
         size_t _mix_channels(size_t samples);
-
-        /**
-         * @brief Initialize cardputer adv
-         *
-         * @param enabled true to enable, false to disable
-         * @return true if successful, false otherwise
-         */
-        bool _init_cardputer_adv(bool enabled);
     };
 
 } // namespace HAL

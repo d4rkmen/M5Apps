@@ -135,6 +135,11 @@ void HalCardputer::init()
     _init_i2c();
     _init_display();
     _init_keyboard();
+    if (_board_type == BoardType::CARDPUTER_ADV)
+    {
+        _es8311 = new ES8311(this);
+        _es8311->init();
+    }
     _init_speaker();
     _init_button();
     _init_bat();
