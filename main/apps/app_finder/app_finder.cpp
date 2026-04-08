@@ -355,7 +355,7 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
     if (!panel.initialized || total == 0)
     {
         _data.hal->canvas()->setTextColor(TFT_DARKGREY);
-        _data.hal->canvas()->drawCenterString("No data",
+        _data.hal->canvas()->drawCenterString("<no files>",
                                               panel_x + panel_width / 2,
                                               12 + (LIST_MAX_VISIBLE_ITEMS / 2) * (14 + 1));
         return false;
@@ -392,13 +392,25 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
         }
         else
         {
-            _data.hal->canvas()->pushImage(panel_x + 6, y_offset + 1, 14, 14, item.is_dir ? image_data_folder14 : image_data_file14);
+            _data.hal->canvas()->pushImage(panel_x + 6,
+                                           y_offset + 1,
+                                           14,
+                                           14,
+                                           item.is_dir ? image_data_folder14 : image_data_file14);
             _data.hal->canvas()->setTextColor(item.is_dir ? TFT_GREENYELLOW : TFT_WHITE);
             _data.hal->canvas()->drawString(display_name.c_str(), panel_x + 20, y_offset + 1);
         }
 
         y_offset += 14 + 1;
         items_drawn++;
+    }
+
+    if (total == 1 && panel.current_path != "/")
+    {
+        _data.hal->canvas()->setTextColor(TFT_DARKGREY);
+        _data.hal->canvas()->drawCenterString("<no files>",
+                                              panel_x + panel_width / 2,
+                                              12 + (LIST_MAX_VISIBLE_ITEMS / 2) * (14 + 1));
     }
 
     _render_panel_scrollbar(panel, panel_x, panel_width);
@@ -1081,8 +1093,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
                     _data.hal->playNextSound();
                     int jump = LIST_MAX_VISIBLE_ITEMS;
                     panel.selected_file = std::min(total - 1, panel.selected_file + jump);
-                    panel.scroll_offset =
-                        std::min(std::max(0, total - LIST_MAX_VISIBLE_ITEMS), panel.selected_file);
+                    panel.scroll_offset = std::min(std::max(0, total - LIST_MAX_VISIBLE_ITEMS), panel.selected_file);
                     selection_changed = true;
                 }
             }

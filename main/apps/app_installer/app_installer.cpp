@@ -695,6 +695,13 @@ bool AppInstaller::_render_file_list()
     {
 
         int total = _item_count();
+        if (total == 0)
+        {
+            _data.hal->canvas()->setTextColor(TFT_DARKGREY);
+            _data.hal->canvas()->drawCenterString("<no apps>", width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
+            _data.list_needs_update = false;
+            return true;
+        }
         auto sel = _item_at(_data.selected_file);
 
         _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
