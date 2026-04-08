@@ -25,9 +25,8 @@
 #include <ctime>
 
 static const char* TAG = "APP_LAUNCHER";
-// Repeat timing consistent with apps
-#define KEY_HOLD_MS 500
 #define KEY_REPEAT_MS 200
+#include "apps/utils/ui/key_repeat.h"
 
 #define BAT_UPDATE_INTERVAL 30000
 
@@ -290,24 +289,10 @@ void Launcher::_stop_repeat()
 bool Launcher::_check_next_pressed()
 {
     bool pressed = _data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT) || _data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN);
-    if (pressed)
+    if (pressed && key_repeat_check(is_repeat, next_fire_ts, millis()))
     {
-        uint32_t now = millis();
-        if (!is_repeat)
-        {
-            // First hit
-            is_repeat = true;
-            next_fire_ts = now + KEY_HOLD_MS;
-            _data.hal->playNextSound();
-            return true;
-        }
-        // Held: fire on interval
-        if (now >= next_fire_ts)
-        {
-            next_fire_ts = now + KEY_REPEAT_MS;
-            _data.hal->playNextSound();
-            return true;
-        }
+        _data.hal->playNextSound();
+        return true;
     }
     return false;
 }
@@ -315,24 +300,10 @@ bool Launcher::_check_next_pressed()
 bool Launcher::_check_last_pressed()
 {
     bool pressed = _data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT) || _data.hal->keyboard()->isKeyPressing(KEY_NUM_UP);
-    if (pressed)
+    if (pressed && key_repeat_check(is_repeat, next_fire_ts, millis()))
     {
-        uint32_t now = millis();
-        if (!is_repeat)
-        {
-            // First hit
-            is_repeat = true;
-            next_fire_ts = now + KEY_HOLD_MS;
-            _data.hal->playNextSound();
-            return true;
-        }
-        // Held: fire on interval
-        if (now >= next_fire_ts)
-        {
-            next_fire_ts = now + KEY_REPEAT_MS;
-            _data.hal->playNextSound();
-            return true;
-        }
+        _data.hal->playNextSound();
+        return true;
     }
     return false;
 }

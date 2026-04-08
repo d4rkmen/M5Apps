@@ -17,6 +17,7 @@
 #include <memory>
 #include <cstdio>
 #include "apps/utils/ui/dialog.h"
+#include "apps/utils/ui/key_repeat.h"
 #include "apps/utils/flash/ptable_tools.h"
 
 static const char* TAG = "APP_FINDER";
@@ -29,8 +30,6 @@ static const char* TAG = "APP_FINDER";
 #define PATH_SCROLL_PAUSE 500
 #define PATH_SCROLL_SPEED 10
 #define PATH_MAX_DISPLAY_CHARS 18
-#define KEY_HOLD_MS 500
-#define KEY_REPEAT_MS 100
 
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
@@ -1064,24 +1063,12 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
         // check Fn key hold
         auto keys_state = _data.hal->keyboard()->keysState();
         // Tab to switch between panels
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_TAB))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 _data.hal->playNextSound();
                 _data.active_panel = (_data.active_panel == panel_left) ? panel_right : panel_left;
@@ -1095,18 +1082,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         // up navigation
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (panel.selected_file > 0)
                 {
@@ -1131,18 +1107,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         // page up
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (panel.selected_file > 0)
                 {
@@ -1157,18 +1122,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         // down navigation
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (panel.selected_file < panel.file_list.size() - 1)
                 {
@@ -1193,18 +1147,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         // page down
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (panel.selected_file < (int)panel.file_list.size() - 1)
                 {
@@ -1436,18 +1379,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         // Backspace
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 _data.hal->playNextSound();
 

@@ -4,11 +4,9 @@
 #include "apps/utils/screenshot/screenshot_tools.h"
 
 static const char* TAG = "DIALOG";
+#include "key_repeat.h"
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
-// keyboard constants
-#define KEY_HOLD_MS 500
-#define KEY_REPEAT_MS 100
 
 using namespace UTILS::HL_TEXT;
 namespace UTILS
@@ -168,22 +166,10 @@ namespace UTILS
                 if (hal->keyboard()->isPressed())
                 {
                     uint32_t now = millis();
-                    bool handle = false;
 
                     if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             hal->playNextSound();
                             selected_button--;
@@ -196,18 +182,7 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             hal->playNextSound();
                             selected_button++;
@@ -576,20 +551,8 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
                     {
-                        uint32_t now = millis();
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         hal->playNextSound();
                         if (cursor_pos > 0)
@@ -601,20 +564,8 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
                     {
-                        uint32_t now = millis();
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         hal->playNextSound();
                         if (cursor_pos > 0)
@@ -622,20 +573,8 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
                     {
-                        uint32_t now = millis();
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         hal->playNextSound();
                         if (cursor_pos < input.length())
@@ -710,22 +649,10 @@ namespace UTILS
                             if (hal->keyboard()->isKeyPressing(key_nums[i]))
                             {
                                 if (cursor_pos == 0 && chars[i] == '0')
-                                    continue; // Prevent leading zeros
+                                    continue;
 
-                                uint32_t now = millis();
-                                if (!is_repeat)
-                                {
-                                    is_repeat = true;
-                                    next_fire_ts = now + KEY_HOLD_MS;
-                                }
-                                else if (now >= next_fire_ts)
-                                {
-                                    next_fire_ts = now + KEY_REPEAT_MS;
-                                }
-                                else
-                                {
+                                if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                                     break;
-                                }
 
                                 hal->playNextSound();
                                 input.insert(cursor_pos, 1, chars[i]);
@@ -734,24 +661,11 @@ namespace UTILS
                             }
                         }
 
-                        // Handle minus sign
                         if (!is_negative && cursor_pos == 0 && hal->keyboard()->isKeyPressing(KEY_NUM_UNDERSCORE) &&
                             min_value < 0)
                         {
-                            uint32_t now = millis();
-                            if (!is_repeat)
-                            {
-                                is_repeat = true;
-                                next_fire_ts = now + KEY_HOLD_MS;
-                            }
-                            else if (now >= next_fire_ts)
-                            {
-                                next_fire_ts = now + KEY_REPEAT_MS;
-                            }
-                            else
-                            {
+                            if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                                 break;
-                            }
 
                             hal->playNextSound();
                             input.insert(0, 1, '-');
@@ -887,20 +801,8 @@ namespace UTILS
                             is_repeat = false;
                         if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
                         {
-                            uint32_t now = millis();
-                            if (!is_repeat)
-                            {
-                                is_repeat = true;
-                                next_fire_ts = now + KEY_HOLD_MS;
-                            }
-                            else if (now >= next_fire_ts)
-                            {
-                                next_fire_ts = now + KEY_REPEAT_MS;
-                            }
-                            else
-                            {
+                            if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                                 continue;
-                            }
 
                             hal->playNextSound();
                             if (cursor_pos > 0)
@@ -908,20 +810,8 @@ namespace UTILS
                         }
                         else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
                         {
-                            uint32_t now = millis();
-                            if (!is_repeat)
-                            {
-                                is_repeat = true;
-                                next_fire_ts = now + KEY_HOLD_MS;
-                            }
-                            else if (now >= next_fire_ts)
-                            {
-                                next_fire_ts = now + KEY_REPEAT_MS;
-                            }
-                            else
-                            {
+                            if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                                 continue;
-                            }
 
                             hal->playNextSound();
                             if (cursor_pos < input.length())
@@ -949,20 +839,8 @@ namespace UTILS
                     } // end of fn mode
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
                     {
-                        uint32_t now = millis();
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         hal->playNextSound();
                         if (cursor_pos > 0)
@@ -994,20 +872,8 @@ namespace UTILS
                         {
                             if (hal->keyboard()->isKeyPressing(key_nums[i]))
                             {
-                                uint32_t now = millis();
-                                if (!is_repeat)
-                                {
-                                    is_repeat = true;
-                                    next_fire_ts = now + KEY_HOLD_MS;
-                                }
-                                else if (now >= next_fire_ts)
-                                {
-                                    next_fire_ts = now + KEY_REPEAT_MS;
-                                }
-                                else
-                                {
+                                if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                                     break;
-                                }
 
                                 hal->playNextSound();
                                 if (input.length() < max_length)
@@ -1138,22 +1004,10 @@ namespace UTILS
                 UTILS::SCREENSHOT_TOOLS::check_and_handle_screenshot(hal, nullptr);
                 if (hal->keyboard()->isPressed())
                 {
-                    uint32_t now = millis();
                     if (hal->keyboard()->isKeyPressing(KEY_NUM_UP))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         if (selected_index > 0)
                         {
@@ -1167,19 +1021,8 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         if (selected_index < items.size() - 1)
                         {
@@ -1193,24 +1036,12 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         if (selected_index > 0)
                         {
                             hal->playNextSound();
-                            // Jump up by visible_items count (page up)
                             int jump = max_visible_items;
                             selected_index = std::max(0, selected_index - jump);
                             scroll_offset = std::max(0, selected_index - (max_visible_items - 1));
@@ -1218,19 +1049,8 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                        }
-                        else
-                        {
+                        if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
-                        }
 
                         if (selected_index < items.size() - 1)
                         {

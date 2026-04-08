@@ -40,8 +40,7 @@ static const char* TAG = "APP_INSTALLER";
 #define WIFI_CONNECT_TIMEOUT_MS 10000
 #define HTTP_RESPONSE_BUFFER_SIZE (16 * 1024)
 #define FILE_DOWNLOAD_BUFFER_SIZE FLASH_BUFFER_SIZE
-#define KEY_HOLD_MS 500
-#define KEY_REPEAT_MS 100
+#include "apps/utils/ui/key_repeat.h"
 #define SCROLLBAR_MIN_HEIGHT 10
 
 static bool is_repeat = false;
@@ -314,22 +313,10 @@ void AppInstaller::_handle_source_selection()
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
 
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 _data.hal->playNextSound();
                 _data.selected_source++;
@@ -340,18 +327,7 @@ void AppInstaller::_handle_source_selection()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 _data.hal->playNextSound();
                 _data.selected_source--;
@@ -829,23 +805,11 @@ bool AppInstaller::_handle_file_selection()
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
         auto keys_state = _data.hal->keyboard()->keysState();
         // up navigation
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_file > 0)
                 {
@@ -869,18 +833,7 @@ bool AppInstaller::_handle_file_selection()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_file > 0)
                 {
@@ -896,18 +849,7 @@ bool AppInstaller::_handle_file_selection()
         // down navigation
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_file < _data.file_list.size() - 1)
                 {
@@ -931,18 +873,7 @@ bool AppInstaller::_handle_file_selection()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_file < _data.file_list.size() - 1)
                 {

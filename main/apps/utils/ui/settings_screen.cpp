@@ -13,9 +13,7 @@ static const char* TAG = "SETTINGS_SCREEN";
 static const char* HINT_ITEMS = "[UP][DOWN] [LEFT][RIGHT] [ESC] [ENTER]";
 static const char* HINT_GROUPS = HINT_ITEMS;
 
-// Keyboard constants
-#define KEY_HOLD_MS 500
-#define KEY_REPEAT_MS 100
+#include "key_repeat.h"
 // Scroll constants
 #define DESC_SCROLL_PAUSE 1000
 #define DESC_SCROLL_SPEED 20
@@ -226,22 +224,10 @@ namespace UTILS
                 if (hal->keyboard()->isPressed())
                 {
                     uint32_t now = millis();
-                    bool handle = false;
 
                     if (hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_group < groups.size() - 1)
                             {
@@ -257,18 +243,7 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_UP))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_group > 0)
                             {
@@ -284,23 +259,11 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_group > 0)
                             {
                                 hal->playNextSound();
-                                // Jump up by visible_items count (page up)
                                 int jump = max_visible_groups;
                                 selected_group = std::max(0, selected_group - jump);
                                 scroll_offset = std::max(0, selected_group - (max_visible_groups - 1));
@@ -310,18 +273,7 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_group < groups.size() - 1)
                             {
@@ -404,22 +356,10 @@ namespace UTILS
                 if (hal->keyboard()->isPressed())
                 {
                     uint32_t now = millis();
-                    bool handle = false;
 
                     if (hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_item < group.items.size() - 1)
                             {
@@ -435,18 +375,7 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_UP))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_item > 0)
                             {
@@ -462,23 +391,11 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_item > 0)
                             {
                                 hal->playNextSound();
-                                // Jump up by visible_items count (page up)
                                 int jump = max_visible_lines;
                                 selected_item = std::max(0, selected_item - jump);
                                 scroll_offset = std::max(0, selected_item - (max_visible_lines - 1));
@@ -488,23 +405,11 @@ namespace UTILS
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
                     {
-                        if (!is_repeat)
-                        {
-                            is_repeat = true;
-                            next_fire_ts = now + KEY_HOLD_MS;
-                            handle = true;
-                        }
-                        else if (now >= next_fire_ts)
-                        {
-                            next_fire_ts = now + KEY_REPEAT_MS;
-                            handle = true;
-                        }
-                        if (handle)
+                        if (key_repeat_check(is_repeat, next_fire_ts, now))
                         {
                             if (selected_item < group.items.size() - 1)
                             {
                                 hal->playNextSound();
-                                // Jump down by visible_items count (page down)
                                 int jump = max_visible_lines;
                                 selected_item = std::min((int)group.items.size() - 1, selected_item + jump);
                                 scroll_offset =

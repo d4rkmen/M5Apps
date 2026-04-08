@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "flood.h"
 #include "apps/utils/ui/dialog.h"
+#include "apps/utils/ui/key_repeat.h"
 #include "common_define.h"
 
 #define SCROLL_BAR_WIDTH 4
@@ -19,8 +20,6 @@
 #define LIST_MAX_VISIBLE_ITEMS 7
 #define LIST_MAX_DISPLAY_CHARS 12
 #define CHAT_MAX_VISIBLE_ITEMS 7
-#define KEY_HOLD_MS 500
-#define KEY_REPEAT_MS 100
 #define APP_RENDER_INTERVAL_MS 1000
 #define SCROLLBAR_MIN_HEIGHT 10
 
@@ -879,25 +878,13 @@ bool AppFlood::_handle_chat_navigation()
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
         bool changed = false;
         // check Fn key hold
         auto keys_state = _data.hal->keyboard()->keysState();
 
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 bool sound = true;
                 // Fn holding? = home
@@ -929,18 +916,7 @@ bool AppFlood::_handle_chat_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 bool sound = true;
                 // Fn holding? = end
@@ -984,18 +960,7 @@ bool AppFlood::_handle_chat_navigation()
         // page up
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 bool sound = false;
                 if (keys_state.fn)
@@ -1034,18 +999,7 @@ bool AppFlood::_handle_chat_navigation()
         // page down
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 bool sound = false;
                 if (keys_state.fn)
@@ -1185,25 +1139,13 @@ bool AppFlood::_handle_devices_navigation()
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
         // check Fn key hold
         auto keys_state = _data.hal->keyboard()->keysState();
 
         // up navigation
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index > 0)
                 {
@@ -1229,18 +1171,7 @@ bool AppFlood::_handle_devices_navigation()
         // down navigation
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 int maxIndex = (int)_data.devices.size() - 1;
                 if (_data.selected_index < maxIndex)
@@ -1266,18 +1197,7 @@ bool AppFlood::_handle_devices_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index > 0)
                 {
@@ -1292,18 +1212,7 @@ bool AppFlood::_handle_devices_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index < (int)_data.devices.size() - 1)
                 {
@@ -1319,18 +1228,7 @@ bool AppFlood::_handle_devices_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_S))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 _data.hal->playNextSound();
                 _data.sort_mode_index = (_data.sort_mode_index + 1) % SORT_MODE_COUNT;

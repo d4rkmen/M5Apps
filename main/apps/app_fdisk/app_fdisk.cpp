@@ -9,14 +9,12 @@ static const char* TAG = "APP_FDISK";
 static const char* HINT_PARTITIONS = "[A]DD [R]ENAME [I]NFO [DEL] [ESC] [ENTER]";
 static const char* HINT_HEX_VIEW = "[UP][DOWN] [<][>] [ENTER] [DEL] [ESC]";
 
+#include "apps/utils/ui/key_repeat.h"
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
 // UI constants
 #define LIST_MAX_VISIBLE_ITEMS 4
 #define LIST_MAX_DISPLAY_CHARS 22
-// keyboard constants
-#define KEY_HOLD_MS 500
-#define KEY_REPEAT_MS 100
 
 using namespace MOONCAKE::APPS;
 using namespace UTILS::FLASH_TOOLS;
@@ -246,22 +244,10 @@ void AppFdisk::_handle_list_navigation()
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
         // Navigation
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index > 0)
                 {
@@ -277,18 +263,7 @@ void AppFdisk::_handle_list_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index < _data.partition_list.size() - 1)
                 {
@@ -304,18 +279,7 @@ void AppFdisk::_handle_list_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index > 0)
                 {
@@ -330,18 +294,7 @@ void AppFdisk::_handle_list_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 if (_data.selected_index < _data.partition_list.size() - 1)
                 {
@@ -833,22 +786,10 @@ void AppFdisk::_handle_hex_view_navigation()
     if (_data.hal->keyboard()->isPressed())
     {
         uint32_t now = millis();
-        bool handle = false;
 
         if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 // Move cursor up one line
                 if (_data.hex_view_offset > 0)
@@ -862,18 +803,7 @@ void AppFdisk::_handle_hex_view_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 // Move cursor down one line
                 uint32_t next_offset = _data.hex_view_offset + bytes_per_line;
@@ -889,18 +819,7 @@ void AppFdisk::_handle_hex_view_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 // Move cursor left one page
                 uint32_t page_size = _data.hex_view_lines_per_page * bytes_per_line;
@@ -922,18 +841,7 @@ void AppFdisk::_handle_hex_view_navigation()
         }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
-            if (!is_repeat)
-            {
-                is_repeat = true;
-                next_fire_ts = now + KEY_HOLD_MS;
-                handle = true;
-            }
-            else if (now >= next_fire_ts)
-            {
-                next_fire_ts = now + KEY_REPEAT_MS;
-                handle = true;
-            }
-            if (handle)
+            if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
                 // Move cursor right one page
                 uint32_t page_size = _data.hex_view_lines_per_page * bytes_per_line;
