@@ -140,7 +140,7 @@ namespace UTILS
                 }
                 else if (close_timeout_ms > 0)
                 {
-                    hal->canvas()->setTextColor(message_color);
+                    hal->canvas()->setTextColor(message_color,THEME_COLOR_BG);
                     hal->canvas()->drawCenterString(
                         std::format("{} {} sec", message, (uint32_t)((close_timeout_ms - (now - start_time)) / 1000)).c_str(),
                         dialog_x + DIALOG_WIDTH / 2,
