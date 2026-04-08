@@ -4,16 +4,16 @@
  */
 
 #include "settings.h"
+#include "hal/hal.h"
+#include "apps/utils/ui/dialog.h"
 #include <format>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
-#include <stdexcept>
 #include <map>
-#include <algorithm>
 
 static const char* TAG = "SETTINGS";
+static const std::string SETTINGS_FILE_NAME = "/sdcard/settings.txt";
 
 namespace SETTINGS
 {
@@ -52,7 +52,19 @@ namespace SETTINGS
         sys_group.items = {
             back_item,
             {"brightness", "Brightness", TYPE_NUMBER, "100", "100", "10", "255", "Screen brightness level (10-255)"},
-            {"volume", "Volume", TYPE_NUMBER, "64", "64", "0", "255", "System sound volume level (0-255)"},
+            {"volume",
+             "Volume",
+             TYPE_NUMBER,
+             "64",
+             "64",
+             "0",
+             "255",
+             "System sound volume level (0-255)",
+             [this](SettingItem_t& item)
+             {
+                 if (_hal && _hal->speaker())
+                     _hal->speaker()->setVolume(std::stoi(item.value));
+             }},
             {"usb_host", "USB host", TYPE_BOOL, "false", "false", "", "", "Enable USB host support for connecting USB devices"},
             {"use_led", "Use LED", TYPE_BOOL, "true", "true", "", "", "Use LED for system notifications"},
             {"dim_time", "Dim seconds", TYPE_NUMBER, "30", "30", "0", "3600", "Screen dimming time in seconds (0-3600)"},
@@ -132,12 +144,67 @@ namespace SETTINGS
         SettingGroup_t export_group;
         export_group.name = "Export (SD card)";
         export_group.items = {};
+        export_group.callback = [this](SETTINGS::SettingGroup_t& group)
+        {
+            bool sdcard_mounted = _hal->sdcard()->is_mounted();
+            if (!sdcard_mounted)
+                _hal->sdcard()->mount(false);
+            if (_hal->sdcard()->is_mounted())
+            {
+                exportToFile(SETTINGS_FILE_NAME);
+                if (!sdcard_mounted)
+                    _hal->sdcard()->eject();
+                UTILS::UI::show_message_dialog(_hal, "Success", "Settings saved to: " + SETTINGS_FILE_NAME, 0);
+            }
+            else
+            {
+                UTILS::UI::show_message_dialog(_hal, "Error", "Failed to mount SD card", 0);
+            }
+        };
+
         SettingGroup_t import_group;
         import_group.name = "Import (SD card)";
         import_group.items = {};
+        import_group.callback = [this](SETTINGS::SettingGroup_t& group)
+        {
+            bool sdcard_mounted = _hal->sdcard()->is_mounted();
+            if (!sdcard_mounted)
+                _hal->sdcard()->mount(false);
+            if (_hal->sdcard()->is_mounted())
+            {
+                if (importFromFile(SETTINGS_FILE_NAME))
+                {
+                    if (!sdcard_mounted)
+                        _hal->sdcard()->eject();
+                    if (!getBool("system", "use_led"))
+                        _hal->led()->off();
+                    UTILS::UI::show_progress(_hal, "WiFi", -1, "Stopping...");
+                    delay(500);
+                    _hal->wifi()->init();
+                    if (getBool("wifi", "enabled"))
+                    {
+                        _hal->wifi()->update_status();
+                        UTILS::UI::show_progress(_hal, "WiFi", -1, "Starting...");
+                        delay(500);
+                        _hal->wifi()->connect();
+                    }
+                    UTILS::UI::show_message_dialog(_hal, "Success", "Loaded from: " + SETTINGS_FILE_NAME, 0);
+                }
+                else
+                {
+                    UTILS::UI::show_error_dialog(_hal, "Error", "Failed to import settings from: " + SETTINGS_FILE_NAME);
+                }
+            }
+            else
+            {
+                UTILS::UI::show_error_dialog(_hal, "Error", "Failed to mount SD card", "OK");
+            }
+        };
 
         _metadata = {wifi_group, sys_group, installer_group, flood_group, export_group, import_group};
     }
+
+    void Settings::setHal(HAL::Hal* hal) { _hal = hal; }
 
     Settings::~Settings()
     {
@@ -702,6 +769,8 @@ namespace SETTINGS
         if (success)
         {
             ESP_LOGI(TAG, "Settings successfully imported from %s", filename.c_str());
+            if (_hal && _hal->speaker())
+                _hal->speaker()->setVolume(getNumber("system", "volume"));
         }
         else
         {

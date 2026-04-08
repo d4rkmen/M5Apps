@@ -75,6 +75,9 @@ extern "C" void app_main(void)
     // Init hal
     hal.init();
 
+    // Connect settings to HAL for callbacks
+    settings.setHal(&hal);
+
     // Init framework
     mooncake.setDatabaseSetupCallback(_data_base_setup_callback);
     mooncake.init();

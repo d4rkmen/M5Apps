@@ -128,6 +128,7 @@ namespace UTILS
                     switch (item.type)
                     {
                     case SETTINGS::TYPE_NONE:
+                    case SETTINGS::TYPE_CALLBACK:
                         break;
                     case SETTINGS::TYPE_BOOL:
                         item.value = hal->settings()->getBool(group.nvs_namespace, item.key) ? "true" : "false";
@@ -211,9 +212,8 @@ namespace UTILS
                                                        THEME_COLOR_BG);                           // background color
             }
 
-            bool handle_group_selection(HAL::Hal* hal,
-                                        std::vector<SETTINGS::SettingGroup_t>& groups,
-                                        std::function<void(int group_index)> on_enter)
+            bool
+            handle_group_selection(HAL::Hal* hal, std::vector<SETTINGS::SettingGroup_t>& groups, std::function<void()> on_exit)
             {
                 bool selection_changed = false;
                 int line_height = hal->canvas()->fontHeight(FONT_16) + 2 + 1;
@@ -289,17 +289,18 @@ namespace UTILS
                     {
                         hal->playNextSound();
                         hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
-                        if (groups[selected_group].items.size() > 0)
+                        auto& group = groups[selected_group];
+                        if (group.callback)
+                        {
+                            group.callback(group);
+                            need_render = true;
+                        }
+                        if (group.items.size() > 0)
                         {
                             in_group = true;
                             selected_item = 0;
                             scroll_offset = 0;
                             selection_changed = true;
-                        }
-                        if (on_enter)
-                        {
-                            on_enter(selected_group);
-                            need_render = true;
                         }
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
@@ -311,9 +312,9 @@ namespace UTILS
                         selected_group = 0;
                         scroll_offset = 0;
                         selection_changed = true;
-                        if (on_enter)
+                        if (on_exit)
                         {
-                            on_enter(-1);
+                            on_exit();
                         }
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_ESC))
@@ -325,9 +326,9 @@ namespace UTILS
                         selected_group = 0;
                         scroll_offset = 0;
                         selection_changed = true;
-                        if (on_enter)
+                        if (on_exit)
                         {
-                            on_enter(-1);
+                            on_exit();
                         }
                     }
                 }
@@ -339,11 +340,9 @@ namespace UTILS
                 return selection_changed;
             }
 
-            bool
-            handle_item_selection(HAL::Hal* hal,
-                                  SETTINGS::SettingGroup_t& group,
-                                  SCROLL_TEXT::ScrollTextContext_t* desc_scroll_ctx,
-                                  std::function<void(SETTINGS::SettingGroup_t&, SETTINGS::SettingItem_t&)> on_item_selected)
+            bool handle_item_selection(HAL::Hal* hal,
+                                       SETTINGS::SettingGroup_t& group,
+                                       SCROLL_TEXT::ScrollTextContext_t* desc_scroll_ctx)
             {
                 bool selection_changed = false;
                 int line_height = hal->canvas()->fontHeight(FONT_16) + 2 + 1;
@@ -425,7 +424,9 @@ namespace UTILS
 
                         in_group = false;
                         selected_item = 0;
-                        scroll_offset = 0;
+                        int line_height = hal->canvas()->fontHeight(FONT_16) + 2 + 1;
+                        int max_visible_groups = (hal->canvas()->height() - ITEMS_Y_OFFSET - HINT_HEIGHT) / line_height;
+                        scroll_offset = std::max(0, selected_group - max_visible_groups + 1);
                         selection_changed = true;
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_ESC))
@@ -435,7 +436,9 @@ namespace UTILS
 
                         in_group = false;
                         selected_item = 0;
-                        scroll_offset = 0;
+                        int line_height = hal->canvas()->fontHeight(FONT_16) + 2 + 1;
+                        int max_visible_groups = (hal->canvas()->height() - ITEMS_Y_OFFSET - HINT_HEIGHT) / line_height;
+                        scroll_offset = std::max(0, selected_group - max_visible_groups + 1);
                         selection_changed = true;
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_ENTER))
@@ -450,13 +453,26 @@ namespace UTILS
                             // Back item
                             in_group = false;
                             selected_item = 0;
-                            scroll_offset = 0;
+                            int line_height = hal->canvas()->fontHeight(FONT_16) + 2 + 1;
+                            int max_visible_groups = (hal->canvas()->height() - ITEMS_Y_OFFSET - HINT_HEIGHT) / line_height;
+                            scroll_offset = std::max(0, selected_group - max_visible_groups + 1);
                             selection_changed = true;
                         }
-                        else if (on_item_selected)
+                        else if (item.type == SETTINGS::TYPE_CALLBACK)
                         {
-                            // Call the provided callback
-                            on_item_selected(group, item);
+                            if (item.callback)
+                            {
+                                item.callback(item);
+                                selection_changed = true;
+                            }
+                        }
+                        else
+                        {
+                            handle_setting_change(hal, group, item);
+                            if (item.callback)
+                            {
+                                item.callback(item);
+                            }
                             selection_changed = true;
                         }
                     }
@@ -486,13 +502,13 @@ namespace UTILS
                         std::vector<SETTINGS::SettingGroup_t>& groups,
                         HLTextContext_t* hint_ctx,
                         SCROLL_TEXT::ScrollTextContext_t* desc_ctx,
-                        std::function<void(int group_index)> on_enter)
+                        std::function<void()> on_exit)
             {
                 bool update_needed = false;
                 // Handle input based on current state
                 if (in_group)
                 {
-                    // In a group, display items and handle item selection                    {
+                    // In a group, display items and handle item selection
                     update_needed |= render_items(hal, groups[selected_group]);
                     // Render scrolling description if available
                     update_needed |= render_scrolling_desc(hal, groups[selected_group], desc_ctx);
@@ -507,14 +523,7 @@ namespace UTILS
                                                     THEME_COLOR_BG);
                     // Handle item selection input
                     auto& group = groups[selected_group];
-                    need_render |= handle_item_selection(hal,
-                                                         group,
-                                                         desc_ctx,
-                                                         [hal](SETTINGS::SettingGroup_t& group, SETTINGS::SettingItem_t& item)
-                                                         {
-                                                             // Callback when item is selected
-                                                             handle_setting_change(hal, group, item);
-                                                         });
+                    need_render |= handle_item_selection(hal, group, desc_ctx);
                 }
                 else
                 {
@@ -530,17 +539,7 @@ namespace UTILS
                                                     TFT_WHITE,
                                                     THEME_COLOR_BG);
                     // Handle group selection input
-                    need_render |= handle_group_selection(hal,
-                                                          groups,
-                                                          [hal, on_enter](int group_index)
-                                                          {
-                                                              //    ESP_LOGI(TAG, "handle_group_selection: group_index=%d",
-                                                              //    group_index);
-                                                              if (on_enter)
-                                                              {
-                                                                  on_enter(group_index);
-                                                              }
-                                                          });
+                    need_render |= handle_group_selection(hal, groups, on_exit);
                 }
 
                 return update_needed;
@@ -555,6 +554,7 @@ namespace UTILS
                 switch (item.type)
                 {
                 case SETTINGS::TYPE_NONE:
+                case SETTINGS::TYPE_CALLBACK:
                     break;
                 case SETTINGS::TYPE_BOOL:
                     // Toggle the boolean value
@@ -736,6 +736,7 @@ namespace UTILS
                 switch (item.type)
                 {
                 case SETTINGS::TYPE_NONE:
+                case SETTINGS::TYPE_CALLBACK:
                     break;
                 case SETTINGS::TYPE_BOOL:
                     success = hal->settings()->setBool(group.nvs_namespace, item.key, item.value == "true");

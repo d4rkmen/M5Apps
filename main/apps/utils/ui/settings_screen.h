@@ -24,13 +24,11 @@ namespace UTILS
              * @param hal HAL instance
              * @param groups List of setting groups
              * @param hint_ctx Highlight text context for displaying hints
-             * @param on_enter Callback function when a group is selected
              * @return true if screen was updated
              */
             bool render_groups(HAL::Hal* hal,
                                const std::vector<SETTINGS::SettingGroup_t>& groups,
-                               HL_TEXT::HLTextContext_t* hint_ctx,
-                               std::function<void(int group_index)> on_enter);
+                               HL_TEXT::HLTextContext_t* hint_ctx);
 
             /**
              * @brief Render settings items list screen
@@ -58,12 +56,11 @@ namespace UTILS
              *
              * @param hal HAL instance
              * @param groups List of setting groups
-             * @param on_enter Callback function when a group is selected
+             * @param on_exit Callback function when exiting settings
              * @return true if selection changed
              */
-            bool handle_group_selection(HAL::Hal* hal,
-                                        std::vector<SETTINGS::SettingGroup_t>& groups,
-                                        std::function<void(int group_index)> on_enter);
+            bool
+            handle_group_selection(HAL::Hal* hal, std::vector<SETTINGS::SettingGroup_t>& groups, std::function<void()> on_exit);
 
             /**
              * @brief Handle user input on the items selection screen
@@ -71,14 +68,11 @@ namespace UTILS
              * @param hal HAL instance
              * @param group Selected setting group
              * @param desc_scroll_ctx Scrolling text context for item descriptions
-             * @param on_item_selected Callback function when an item is selected
              * @return true if selection changed
              */
-            bool handle_item_selection(
-                HAL::Hal* hal,
-                SETTINGS::SettingGroup_t& group,
-                SCROLL_TEXT::ScrollTextContext_t* desc_scroll_ctx,
-                std::function<void(HAL::Hal* hal, SETTINGS::SettingGroup_t&, SETTINGS::SettingItem_t&)> on_item_selected);
+            bool handle_item_selection(HAL::Hal* hal,
+                                       SETTINGS::SettingGroup_t& group,
+                                       SCROLL_TEXT::ScrollTextContext_t* desc_scroll_ctx);
 
             void reset();
             /**
@@ -95,7 +89,7 @@ namespace UTILS
                         std::vector<SETTINGS::SettingGroup_t>& groups,
                         HL_TEXT::HLTextContext_t* hint_ctx,
                         SCROLL_TEXT::ScrollTextContext_t* desc_ctx,
-                        std::function<void(int group_index)> on_enter);
+                        std::function<void()> on_exit);
 
             /**
              * @brief Handle changes to a setting item
