@@ -16,6 +16,7 @@
 #include "apps/utils/anim/scroll_text.h"
 #include "apps/utils/anim/hl_text.h"
 #include "apps/utils/ui/dialog.h"
+#include "apps/utils/dir_list.h"
 
 #include "assets/finder_big.h"
 #include "assets/finder_small.h"
@@ -72,7 +73,7 @@ namespace MOONCAKE
             {
                 bool initialized = false;
                 std::string current_path = "/";
-                std::vector<FileItem_t> file_list;
+                UTILS::DirList dir_list;
                 int selected_file = 0;
                 int scroll_offset = 0;
                 bool needs_update = true;
@@ -103,6 +104,10 @@ namespace MOONCAKE
             const FileItem_t BACK_DIR_ITEM = {"..", true, 0, "", ""};
             const FileItem_t SD_CARD_ITEM = {"sdcard", true, 0, "sdcard", "SD card"};
             const FileItem_t USB_ITEM = {"usb", true, 0, "usb", "USB drive"};
+            // Item access (virtual list — constructs on the fly from DirList)
+            int _panel_item_count(const PanelData_t& panel);
+            FileItem_t _panel_item_at(const PanelData_t& panel, int index);
+
             // Helper methods
             bool _has_extension(const std::string& filename, const std::string& ext);
             std::string _truncate_path(const std::string& path, int max_chars);

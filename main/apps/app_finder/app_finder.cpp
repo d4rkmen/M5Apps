@@ -196,6 +196,29 @@ void AppFinder::_init_panel(PanelData_t& panel)
     _update_panel_file_list(panel);
 }
 
+int AppFinder::_panel_item_count(const PanelData_t& panel)
+{
+    if (panel.current_path == "/")
+        return 2;
+    return 1 + panel.dir_list.count();
+}
+
+AppFinder::FileItem_t AppFinder::_panel_item_at(const PanelData_t& panel, int index)
+{
+    if (panel.current_path == "/")
+    {
+        if (index == 0)
+            return SD_CARD_ITEM;
+        return USB_ITEM;
+    }
+    if (index == 0)
+        return BACK_DIR_ITEM;
+    auto entry = panel.dir_list.at(index - 1);
+    auto tm = localtime(&entry.mtime);
+    std::string info = std::format("{:04d}-{:02d}-{:02d}", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+    return {entry.name, entry.is_dir, (uint64_t)entry.size, entry.name, std::move(info)};
+}
+
 void AppFinder::_update_panel_file_list(PanelData_t& panel)
 {
     if (!panel.initialized)
@@ -203,133 +226,60 @@ void AppFinder::_update_panel_file_list(PanelData_t& panel)
         return;
     }
 
-    // Special-case root: manually expose mounted sources
+    panel.dir_list.clear();
+
     if (panel.current_path == "/")
     {
-        // unmount usb and sdcard if mounted
         _data.hal->usb()->unmount();
         _data.hal->sdcard()->eject();
-        // add sdcard and usb to file list
-        panel.file_list.clear();
-        panel.file_list.shrink_to_fit();
-        panel.file_list.push_back(SD_CARD_ITEM);
-        panel.file_list.push_back(USB_ITEM);
-        // no more files in root
         return;
     }
-    else
+
+    if (panel.current_path == "/sdcard")
     {
-        if (panel.current_path == "/sdcard")
+        _mount_sdcard();
+        if (!_data.hal->sdcard()->is_mounted())
         {
-            _mount_sdcard();
-            if (!_data.hal->sdcard()->is_mounted())
-            {
-                // show error dialog
-                UTILS::UI::show_error_dialog(_data.hal, "SD card not found", "Plug an SD card and try again");
-                // failback to root
-                panel.current_path = "/";
-                // redraw all
-                _data.left_panel.panel_info_needs_update = true;
-                _data.right_panel.panel_info_needs_update = true;
-                _data.left_panel.needs_update = true;
-                _data.right_panel.needs_update = true;
-                return;
-            }
+            UTILS::UI::show_error_dialog(_data.hal, "SD card not found", "Plug an SD card and try again");
+            panel.current_path = "/";
+            _data.left_panel.panel_info_needs_update = true;
+            _data.right_panel.panel_info_needs_update = true;
+            _data.left_panel.needs_update = true;
+            _data.right_panel.needs_update = true;
+            return;
         }
-        else if (panel.current_path == "/usb")
-        {
-            // check if usb is enabled
-            if (!_data.hal->settings()->getBool("system", "usb_host"))
-            {
-                // show error dialog
-                UTILS::UI::show_error_dialog(_data.hal, "USB disabled", "USB host is disabled in Settings");
-                // failback to root
-                panel.current_path = "/";
-                // redraw all
-                _data.left_panel.panel_info_needs_update = true;
-                _data.right_panel.panel_info_needs_update = true;
-                _data.left_panel.needs_update = true;
-                _data.right_panel.needs_update = true;
-                return;
-            }
-            _mount_usb();
-            if (!_data.hal->usb()->is_mounted())
-            {
-                // show error dialog
-                UTILS::UI::show_error_dialog(_data.hal, "USB not found", "Plug a USB drive and try again");
-                // failback to root
-                panel.current_path = "/";
-                // redraw all
-                _data.left_panel.panel_info_needs_update = true;
-                _data.right_panel.panel_info_needs_update = true;
-                _data.left_panel.needs_update = true;
-                _data.right_panel.needs_update = true;
-                return;
-            }
-        }
-        // Add parent directory entry if not in root
-        panel.file_list.clear();
-        panel.file_list.shrink_to_fit();
-        panel.file_list.push_back(BACK_DIR_ITEM);
     }
-    DIR* dir = opendir(panel.current_path.c_str());
-    if (dir)
+    else if (panel.current_path == "/usb")
     {
-        struct dirent* entry;
-        std::vector<FileItem_t> folders;
-        std::vector<FileItem_t> files;
-
-        while ((entry = readdir(dir)) != NULL)
+        if (!_data.hal->settings()->getBool("system", "usb_host"))
         {
-            std::string name = entry->d_name;
-            if (name == "." || name == "..")
-            {
-                continue;
-            }
-
-            std::string full_path = panel.current_path + "/" + name;
-            struct stat statbuf;
-            if (stat(full_path.c_str(), &statbuf) == 0)
-            {
-                bool is_dir = S_ISDIR(statbuf.st_mode);
-                // Show all files and directories
-                uint64_t size = statbuf.st_size;
-                auto tm = localtime(&statbuf.st_mtime);
-                std::string info = std::format("{:04d}-{:02d}-{:02d}", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
-
-                FileItem_t item(name, is_dir, size, name, info);
-                if (is_dir)
-                {
-                    folders.push_back(item);
-                }
-                else
-                {
-                    files.push_back(item);
-                }
-            }
+            UTILS::UI::show_error_dialog(_data.hal, "USB disabled", "USB host is disabled in Settings");
+            panel.current_path = "/";
+            _data.left_panel.panel_info_needs_update = true;
+            _data.right_panel.panel_info_needs_update = true;
+            _data.left_panel.needs_update = true;
+            _data.right_panel.needs_update = true;
+            return;
         }
-        closedir(dir);
-
-        // Sort folders by name
-        std::sort(folders.begin(), folders.end(), [](const FileItem_t& a, const FileItem_t& b) { return a.name < b.name; });
-
-        // Sort files by name
-        std::sort(files.begin(), files.end(), [](const FileItem_t& a, const FileItem_t& b) { return a.name < b.name; });
-
-        // Add folders first, then files
-        for (const auto& folder : folders)
+        _mount_usb();
+        if (!_data.hal->usb()->is_mounted())
         {
-            panel.file_list.push_back(folder);
+            UTILS::UI::show_error_dialog(_data.hal, "USB not found", "Plug a USB drive and try again");
+            panel.current_path = "/";
+            _data.left_panel.panel_info_needs_update = true;
+            _data.right_panel.panel_info_needs_update = true;
+            _data.left_panel.needs_update = true;
+            _data.right_panel.needs_update = true;
+            return;
         }
-        for (const auto& file : files)
-        {
-            panel.file_list.push_back(file);
-        }
-        // check selected file (after deleting or moving)
-        if (panel.selected_file >= panel.file_list.size())
-        {
-            panel.selected_file = panel.file_list.size() > 0 ? panel.file_list.size() - 1 : 0;
-        }
+    }
+
+    panel.dir_list.scan(panel.current_path.c_str());
+
+    int total = _panel_item_count(panel);
+    if (panel.selected_file >= total)
+    {
+        panel.selected_file = total > 0 ? total - 1 : 0;
     }
 }
 
@@ -358,18 +308,16 @@ void AppFinder::_navigate_panel_directory(PanelData_t& panel, const std::string&
     // If navigating back to parent directory, try to position at the directory we came from
     if (old_path.length() > path.length())
     {
-        // Extract the last segment of the old path
         size_t last_slash = old_path.find_last_of('/');
         if (last_slash != std::string::npos)
         {
             std::string last_segment = old_path.substr(last_slash + 1);
-            // Find this segment in the file list
-            for (size_t i = 0; i < panel.file_list.size(); i++)
+            int total = _panel_item_count(panel);
+            for (int i = 0; i < total; i++)
             {
-                if (panel.file_list[i].name == last_segment)
+                if (_panel_item_at(panel, i).name == last_segment)
                 {
                     panel.selected_file = i;
-                    // Adjust scroll offset if needed
                     if (panel.selected_file >= LIST_MAX_VISIBLE_ITEMS)
                     {
                         panel.scroll_offset = panel.selected_file - LIST_MAX_VISIBLE_ITEMS + 1;
@@ -403,9 +351,9 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
     // set font
     _data.hal->canvas()->setFont(FONT_12);
 
-    if (!panel.initialized || panel.file_list.empty())
+    int total = _panel_item_count(panel);
+    if (!panel.initialized || total == 0)
     {
-        // draw string: no files to display
         _data.hal->canvas()->setTextColor(TFT_DARKGREY);
         _data.hal->canvas()->drawCenterString("No data",
                                               panel_x + panel_width / 2,
@@ -413,17 +361,16 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
         return false;
     }
 
-    // Draw file list
     int y_offset = 12;
     int items_drawn = 0;
-    const int max_width = LIST_MAX_DISPLAY_CHARS * 6; // FONT_12 width
+    const int max_width = LIST_MAX_DISPLAY_CHARS * 6;
 
-    for (int i = panel.scroll_offset; i < panel.file_list.size() && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
+    for (int i = panel.scroll_offset; i < total && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
     {
-        bool is_dir = panel.file_list[i].is_dir;
-        std::string display_name = panel.file_list[i].name;
+        auto item = _panel_item_at(panel, i);
+        std::string display_name = item.name;
 
-        if (panel.file_list[i].is_dir)
+        if (item.is_dir)
         {
             display_name = "[" + display_name + "]";
         }
@@ -439,14 +386,14 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
                                            y_offset + 1,
                                            14,
                                            14,
-                                           is_dir ? image_data_folder_sel14 : image_data_file_sel14);
+                                           item.is_dir ? image_data_folder_sel14 : image_data_file_sel14);
             _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
             _data.hal->canvas()->drawString(display_name.c_str(), panel_x + 20, y_offset + 1);
         }
         else
         {
-            _data.hal->canvas()->pushImage(panel_x + 6, y_offset + 1, 14, 14, is_dir ? image_data_folder14 : image_data_file14);
-            _data.hal->canvas()->setTextColor(is_dir ? TFT_GREENYELLOW : TFT_WHITE);
+            _data.hal->canvas()->pushImage(panel_x + 6, y_offset + 1, 14, 14, item.is_dir ? image_data_folder14 : image_data_file14);
+            _data.hal->canvas()->setTextColor(item.is_dir ? TFT_GREENYELLOW : TFT_WHITE);
             _data.hal->canvas()->drawString(display_name.c_str(), panel_x + 20, y_offset + 1);
         }
 
@@ -456,10 +403,9 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
 
     _render_panel_scrollbar(panel, panel_x, panel_width);
 
-    // Draw info panel at the bottom
-    if (!panel.file_list.empty() && panel.selected_file < panel.file_list.size())
+    if (panel.selected_file < total)
     {
-        const FileItem_t& selected_item = panel.file_list[panel.selected_file];
+        auto selected_item = _panel_item_at(panel, panel.selected_file);
         std::string info_text;
 
         if (selected_item.name == "..")
@@ -468,29 +414,14 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
         }
         else if (selected_item.is_dir)
         {
-            // std::string name = selected_item.name;
-            // if (name.length() > 16)
-            // {
-            //     name = name.substr(0, 15) + ">";
-            // }
-            // info_text = std::format("[{:16.16s}]", name);
             info_text = selected_item.info;
         }
         else
         {
-            // std::string name = selected_item.name;
-            // if (name.length() > 10)
-            // {
-            //     name = name.substr(0, 9) + ">";
-            // }
             info_text = std::format("{:10.10s} {:>7s}", selected_item.info, PartitionTable::formatSize(selected_item.size));
         }
 
-        // Draw info panel background
         int info_y = 12 + (14 + 1) * LIST_MAX_VISIBLE_ITEMS;
-        // _data.hal->canvas()->fillRect(panel_x, info_y, panel_width, 12, THEME_COLOR_BG_SELECTED);
-
-        // Draw info text
         _data.hal->canvas()->setTextColor(TFT_DARKGREY);
         _data.hal->canvas()->drawString(info_text.c_str(), panel_x + 2, info_y);
     }
@@ -501,7 +432,8 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
 
 bool AppFinder::_render_panel_scrollbar(PanelData_t& panel, int panel_x, int panel_width)
 {
-    if (panel.file_list.size() <= LIST_MAX_VISIBLE_ITEMS)
+    int total = _panel_item_count(panel);
+    if (total <= LIST_MAX_VISIBLE_ITEMS)
     {
         return false;
     }
@@ -511,7 +443,7 @@ bool AppFinder::_render_panel_scrollbar(PanelData_t& panel, int panel_x, int pan
                               12,
                               scrollbar_width,
                               (14 + 1) * LIST_MAX_VISIBLE_ITEMS,
-                              (int)panel.file_list.size(),
+                              total,
                               LIST_MAX_VISIBLE_ITEMS,
                               panel.scroll_offset);
     return true;
@@ -529,14 +461,14 @@ bool AppFinder::_render_scrolling_path(PanelData_t& panel, int panel_x, bool is_
 
 bool AppFinder::_render_scrolling_list(PanelData_t& panel, int panel_x, int panel_width)
 {
-    if (!panel.initialized || panel.file_list.empty())
+    if (!panel.initialized || _panel_item_count(panel) == 0)
     {
         return false;
     }
 
-    // Get the text to display (file or directory name)
-    std::string display_name = panel.file_list[panel.selected_file].name;
-    if (panel.file_list[panel.selected_file].is_dir)
+    auto item = _panel_item_at(panel, panel.selected_file);
+    std::string display_name = item.name;
+    if (item.is_dir)
     {
         display_name = "[" + display_name + "]";
     }
@@ -1046,7 +978,8 @@ bool AppFinder::_delete_directory_recursive(const std::string& dir_path)
 
 bool AppFinder::_handle_file_selection(PanelData_t& panel)
 {
-    if (panel.file_list.empty())
+    int total = _panel_item_count(panel);
+    if (total == 0)
     {
         return false;
     }
@@ -1119,13 +1052,12 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         {
             if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
-                if (panel.selected_file < panel.file_list.size() - 1)
+                if (panel.selected_file < total - 1)
                 {
                     _data.hal->playNextSound();
-                    // Fn holding? = end
                     if (keys_state.fn)
                     {
-                        panel.selected_file = panel.file_list.size() - 1;
+                        panel.selected_file = total - 1;
                     }
                     else
                     {
@@ -1144,13 +1076,13 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
         {
             if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
-                if (panel.selected_file < (int)panel.file_list.size() - 1)
+                if (panel.selected_file < total - 1)
                 {
                     _data.hal->playNextSound();
                     int jump = LIST_MAX_VISIBLE_ITEMS;
-                    panel.selected_file = std::min((int)panel.file_list.size() - 1, panel.selected_file + jump);
+                    panel.selected_file = std::min(total - 1, panel.selected_file + jump);
                     panel.scroll_offset =
-                        std::min(std::max(0, (int)panel.file_list.size() - LIST_MAX_VISIBLE_ITEMS), panel.selected_file);
+                        std::min(std::max(0, total - LIST_MAX_VISIBLE_ITEMS), panel.selected_file);
                     selection_changed = true;
                 }
             }
@@ -1161,11 +1093,11 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
 
-            const FileItem_t& selected_item = panel.file_list[panel.selected_file];
-            if (selected_item.is_dir)
+            auto sel = _panel_item_at(panel, panel.selected_file);
+            if (sel.is_dir)
             {
                 std::string new_path;
-                if (selected_item.name == "..")
+                if (sel.name == "..")
                 {
                     size_t last_slash = panel.current_path.find_last_of('/');
                     if (last_slash != std::string::npos)
@@ -1180,7 +1112,7 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
                     new_path = panel.current_path;
                     if (new_path != "/")
                         new_path += "/";
-                    new_path += selected_item.name;
+                    new_path += sel.name;
                 }
                 _navigate_panel_directory(panel, new_path);
             }
@@ -1192,30 +1124,24 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_5);
 
-            // Determine target panel
             PanelData_t& other_panel = (&panel == &_data.left_panel) ? _data.right_panel : _data.left_panel;
-            // Copy files and directories (skip "..")
-            const FileItem_t& selected_item = panel.file_list[panel.selected_file];
-            if (selected_item.name != ".." && panel.current_path != "/" && other_panel.current_path != "/")
+            auto sel_copy = _panel_item_at(panel, panel.selected_file);
+            if (sel_copy.name != ".." && panel.current_path != "/" && other_panel.current_path != "/")
             {
-                // Build absolute source path
                 std::string src_path = panel.current_path;
                 if (src_path != "/")
                     src_path += "/";
-                src_path += selected_item.fname.empty() ? selected_item.name : selected_item.fname;
+                std::string fname = sel_copy.fname.empty() ? sel_copy.name : sel_copy.fname;
+                src_path += fname;
 
-                // Build destination path
                 std::string dest_dir = other_panel.current_path;
                 if (dest_dir != "/")
                     dest_dir += "/";
-                std::string dest_path = dest_dir + (selected_item.fname.empty() ? selected_item.name : selected_item.fname);
+                std::string dest_path = dest_dir + fname;
 
-                // Confirm
-                std::string title = selected_item.name;
                 std::string message = std::string("Copy to: ") + dest_dir;
-                if (UTILS::UI::show_confirmation_dialog(_data.hal, title, message))
+                if (UTILS::UI::show_confirmation_dialog(_data.hal, sel_copy.name, message))
                 {
-                    // Ensure destination directory exists (create recursively)
                     for (size_t i = 1; i < dest_dir.length(); i++)
                     {
                         if (dest_dir[i] == '/')
@@ -1226,9 +1152,8 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
                     }
                     mkdir(dest_dir.c_str(), 0777);
 
-                    if (_copy_file(src_path, dest_path, selected_item.name))
+                    if (_copy_file(src_path, dest_path, sel_copy.name))
                     {
-                        // Refresh destination panel
                         _update_panel_file_list(other_panel);
                         other_panel.needs_update = true;
                     }
@@ -1247,30 +1172,24 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_6);
 
-            // Determine target panel
             PanelData_t& other_panel = (&panel == &_data.left_panel) ? _data.right_panel : _data.left_panel;
-            // Move files and directories (skip "..")
-            const FileItem_t& selected_item = panel.file_list[panel.selected_file];
-            if (selected_item.name != ".." && panel.current_path != "/" && other_panel.current_path != "/")
+            auto sel_move = _panel_item_at(panel, panel.selected_file);
+            if (sel_move.name != ".." && panel.current_path != "/" && other_panel.current_path != "/")
             {
-                // Build absolute source path
                 std::string src_path = panel.current_path;
                 if (src_path != "/")
                     src_path += "/";
-                src_path += selected_item.fname.empty() ? selected_item.name : selected_item.fname;
+                std::string fname = sel_move.fname.empty() ? sel_move.name : sel_move.fname;
+                src_path += fname;
 
-                // Build destination path
                 std::string dest_dir = other_panel.current_path;
                 if (dest_dir != "/")
                     dest_dir += "/";
-                std::string dest_path = dest_dir + (selected_item.fname.empty() ? selected_item.name : selected_item.fname);
+                std::string dest_path = dest_dir + fname;
 
-                // Confirm
-                std::string title = selected_item.name;
                 std::string message = std::string("Move to: ") + dest_dir;
-                if (UTILS::UI::show_confirmation_dialog(_data.hal, title, message))
+                if (UTILS::UI::show_confirmation_dialog(_data.hal, sel_move.name, message))
                 {
-                    // Ensure destination directory exists (create recursively)
                     for (size_t i = 1; i < dest_dir.length(); i++)
                     {
                         if (dest_dir[i] == '/')
@@ -1281,9 +1200,8 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
                     }
                     mkdir(dest_dir.c_str(), 0777);
 
-                    if (_move_file(src_path, dest_path, selected_item.name))
+                    if (_move_file(src_path, dest_path, sel_move.name))
                     {
-                        // Refresh both panels
                         _update_panel_file_list(panel);
                         _update_panel_file_list(other_panel);
                         panel.needs_update = true;
@@ -1343,23 +1261,19 @@ bool AppFinder::_handle_file_selection(PanelData_t& panel)
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_8);
 
-            const FileItem_t& selected_item = panel.file_list[panel.selected_file];
-            if (selected_item.name != ".." && panel.current_path != "/")
+            auto sel_del = _panel_item_at(panel, panel.selected_file);
+            if (sel_del.name != ".." && panel.current_path != "/")
             {
-                // Build absolute path
                 std::string full_path = panel.current_path;
                 if (full_path != "/")
                     full_path += "/";
-                full_path += selected_item.fname.empty() ? selected_item.name : selected_item.fname;
+                full_path += sel_del.fname.empty() ? sel_del.name : sel_del.fname;
 
-                // Confirm deletion
-                std::string title = selected_item.name;
-                std::string message = selected_item.is_dir ? "Delete folder and all contents?" : "Delete the file?";
-                if (UTILS::UI::show_confirmation_dialog(_data.hal, title, message))
+                std::string message = sel_del.is_dir ? "Delete folder and all contents?" : "Delete the file?";
+                if (UTILS::UI::show_confirmation_dialog(_data.hal, sel_del.name, message))
                 {
-                    if (_delete_file_or_folder(full_path, selected_item.name, selected_item.is_dir))
+                    if (_delete_file_or_folder(full_path, sel_del.name, sel_del.is_dir))
                     {
-                        // Refresh current panel
                         _update_panel_file_list(panel);
                         panel.needs_update = true;
                     }

@@ -90,7 +90,7 @@ void AppInstaller::onCreate()
                      DESC_SCROLL_PAUSE);
     hl_text_init(&_data.hint_hl_ctx, _data.hal->canvas(), 20, 1500);
     _update_source_list();
-    _data.file_list.reserve(100);
+
 }
 
 void AppInstaller::onResume()
@@ -291,11 +291,7 @@ void AppInstaller::_unmount_usb()
 
 void AppInstaller::_clear_file_list()
 {
-    for (auto* item : _data.file_list)
-    {
-        delete item;
-    }
-    _data.file_list.clear();
+    _data.dir_list.clear();
     _free_cloud_cache();
 }
 
@@ -317,7 +313,8 @@ int AppInstaller::_item_count()
 {
     if (_data.source_type == source_cloud && _data.cloud_json)
         return (_data.cloud_has_back ? 1 : 0) + _data.cloud_col_count + _data.cloud_app_count;
-    return (int)_data.file_list.size();
+    bool has_back = _data.current_path.find('/', 1) != std::string::npos;
+    return (has_back ? 1 : 0) + _data.dir_list.count();
 }
 
 static std::string _json_str_view(const char* buf, int len, const char* path, int max_len = 0)
@@ -335,7 +332,22 @@ static std::string _json_str_view(const char* buf, int len, const char* path, in
 AppInstaller::FileItem_t AppInstaller::_item_at(int index)
 {
     if (_data.source_type != source_cloud || !_data.cloud_json)
-        return *_data.file_list[index];
+    {
+        bool has_back = _data.current_path.find('/', 1) != std::string::npos;
+        if (has_back && index == 0)
+            return BACK_DIR_ITEM;
+        int adj = has_back ? index - 1 : index;
+        auto entry = _data.dir_list.at(adj);
+        if (entry.is_dir)
+            return {entry.name, true, 0, entry.name, ""};
+        auto tm = localtime(&entry.mtime);
+        std::string info = std::format("{} {:04d}-{:02d}-{:02d}",
+                                       PartitionTable::formatSize(entry.size),
+                                       tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+        std::string fname(entry.name);
+        std::string name = fname.substr(0, fname.find_last_of("."));
+        return {std::move(name), false, entry.size, std::move(fname), std::move(info)};
+    }
 
     if (_data.cloud_has_back && index == 0)
         return BACK_DIR_ITEM;
@@ -588,10 +600,6 @@ void AppInstaller::_update_source_file_list()
         {
             return;
         }
-        if (_data.current_path.find('/', 1) != std::string::npos)
-        {
-            _data.file_list.push_back(new FileItem_t(BACK_DIR_ITEM));
-        }
         _update_file_list();
         break;
     default:
@@ -602,57 +610,7 @@ void AppInstaller::_update_source_file_list()
 void AppInstaller::_update_file_list()
 {
     _data.current_desc = "";
-    DIR* dir = opendir(_data.current_path.c_str());
-    if (dir)
-    {
-        struct dirent* entry;
-        std::vector<FileItem_t> folders;
-        std::vector<FileItem_t> files;
-        while ((entry = readdir(dir)) != NULL)
-        {
-            std::string name = entry->d_name;
-            if (name == "." || name == "..")
-            {
-                continue;
-            }
-
-            std::string full_path = _data.current_path + "/" + name;
-            struct stat statbuf;
-            if (stat(full_path.c_str(), &statbuf) == 0)
-            {
-                bool is_dir = S_ISDIR(statbuf.st_mode);
-                // Only show .bin files and directories
-                if (is_dir)
-                {
-                    folders.push_back({name, true, 0, name, ""});
-                }
-                else if (_has_extension(name, ".bin"))
-                {
-                    uint64_t size = statbuf.st_size;
-                    auto tm = localtime(&statbuf.st_mtime);
-                    std::string info = std::format("{} {:04d}-{:02d}-{:02d}",
-                                                   PartitionTable::formatSize(size),
-                                                   tm->tm_year + 1900,
-                                                   tm->tm_mon + 1,
-                                                   tm->tm_mday);
-
-                    std::string app_name = name.substr(0, name.find_last_of("."));
-                    files.push_back({app_name, false, size, name, info});
-                }
-            }
-        }
-        closedir(dir);
-
-        // Sort folders and files by display name
-        std::sort(folders.begin(), folders.end(), [](const FileItem_t& a, const FileItem_t& b) { return a.name < b.name; });
-        std::sort(files.begin(), files.end(), [](const FileItem_t& a, const FileItem_t& b) { return a.name < b.name; });
-
-        // Append folders first, then files
-        for (const auto& f : folders)
-            _data.file_list.push_back(new FileItem_t(f));
-        for (const auto& f : files)
-            _data.file_list.push_back(new FileItem_t(f));
-    }
+    _data.dir_list.scan(_data.current_path.c_str(), ".bin");
 }
 
 std::string AppInstaller::_truncate_path(const std::string& path, int max_chars)

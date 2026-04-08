@@ -18,6 +18,7 @@
 #include "apps/utils/flash/flash_tools.h"
 #include "apps/utils/flash/ptable_tools.h"
 #include "apps/utils/ui/dialog.h"
+#include "apps/utils/dir_list.h"
 
 #include "assets/installer_big.h"
 #include "assets/installer_small.h"
@@ -92,8 +93,8 @@ namespace MOONCAKE
                 bool usb_initialized = false;
                 InstallerState_t state = state_source;
 
-                // File listing data (SD/USB use file_list, cloud uses cached JSON)
-                std::vector<FileItem_t*> file_list;
+                // File listing data (SD/USB use dir_list, cloud uses cached JSON)
+                UTILS::DirList dir_list;
                 std::vector<SelectItem_t> sources;
                 std::string current_path = "/";
                 std::string current_desc = "";
