@@ -34,7 +34,7 @@ namespace UTILS
                         uint32_t scroll_pause_ms)
         {
             ESP_LOGW(TAG, "show_dialog: title=%s, message=%s", title.c_str(), message.c_str());
-            // set brightness to settings value
+            hal->displayWakeup();
             int brightness = hal->settings()->getNumber("system", "brightness");
             hal->display()->setBrightness(brightness == 0 ? 100 : brightness);
             // set font
@@ -905,11 +905,11 @@ namespace UTILS
                 return -1;
             }
 
-            // wake up screen
+            hal->displayWakeup();
             int brightness = hal->settings()->getNumber("system", "brightness");
             hal->display()->setBrightness(brightness == 0 ? 100 : brightness);
 
-            int selected_index = default_index >= 0 && default_index < items.size() ? default_index : 0;
+            int selected_index = default_index >= 0 && default_index < (int)items.size() ? default_index : 0;
             bool selecting = true;
             int scroll_offset = 0;
             int line_height = hal->canvas()->fontHeight(FONT_16) + 2 + 1;

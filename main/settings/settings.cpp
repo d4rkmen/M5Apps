@@ -67,7 +67,19 @@ namespace SETTINGS
              }},
             {"usb_host", "USB host", TYPE_BOOL, "false", "false", "", "", "Enable USB host support for connecting USB devices"},
             {"use_led", "Use LED", TYPE_BOOL, "true", "true", "", "", "Use LED for system notifications"},
-            {"dim_time", "Dim seconds", TYPE_NUMBER, "30", "30", "0", "3600", "Screen dimming time in seconds (0-3600)"},
+            {"dim_time",
+             "Dim seconds",
+             TYPE_NUMBER,
+             "30",
+             "30",
+             "0",
+             "3600",
+             "Screen dimming time in seconds (0-3600)",
+             [this](SettingItem_t& item)
+             {
+                 if (_hal && _hal->keyboard())
+                     _hal->keyboard()->set_dim_time(std::stoi(item.value) * 1000);
+             }},
             {"boot_sound", "Boot sound", TYPE_BOOL, "true", "true", "", "", "Play boot sound on startup"},
             {"show_bat_volt", "Battery voltage", TYPE_BOOL, "true", "true", "", "", "Show battery voltage on the system bar"},
             {"show_time", "Show time", TYPE_BOOL, "true", "true", "", "", "Show time on the system bar"},
@@ -769,6 +781,8 @@ namespace SETTINGS
         if (success)
         {
             ESP_LOGI(TAG, "Settings successfully imported from %s", filename.c_str());
+            if (_hal && _hal->keyboard())
+                _hal->keyboard()->set_dim_time(getNumber("system", "dim_time") * 1000);
             if (_hal && _hal->speaker())
                 _hal->speaker()->setVolume(getNumber("system", "volume"));
         }

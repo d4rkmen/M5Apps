@@ -51,6 +51,7 @@ namespace HAL
         LED* _led;
         ES8311* _es8311;
         bool _sntp_adjusted;
+        bool _display_sleeping = false;
         BoardType _board_type;
 
     public:
@@ -86,7 +87,28 @@ namespace HAL
         // Canvas
         inline void canvas_system_bar_update() { _canvas_system_bar->pushSprite(_canvas_space_bar->width(), 0); }
         inline void canvas_space_bar_update() { _canvas_space_bar->pushSprite(0, 0); }
-        inline void canvas_update() { _canvas->pushSprite(_canvas_space_bar->width(), _canvas_system_bar->height()); }
+        inline void canvas_update()
+        {
+            if (!_display_sleeping)
+                _canvas->pushSprite(_canvas_space_bar->width(), _canvas_system_bar->height());
+        }
+        inline bool isDisplaySleeping() const { return _display_sleeping; }
+        inline void displaySleep()
+        {
+            if (!_display_sleeping)
+            {
+                _display_sleeping = true;
+                _display->sleep();
+            }
+        }
+        inline void displayWakeup()
+        {
+            if (_display_sleeping)
+            {
+                _display_sleeping = false;
+                _display->wakeup();
+            }
+        }
 
         // Override
         virtual std::string type() { return "null"; }

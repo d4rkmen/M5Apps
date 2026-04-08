@@ -49,8 +49,23 @@ void Launcher::onCreate()
     _data.system_bar_force_update_flag = mcAppGetDatabase()->Get("SYSTEM_BAR_FORCE_UPDATE")->value<bool*>();
     // settings
     _data.hal->speaker()->setVolume(_data.hal->settings()->getNumber("system", "volume"));
-    // _data.is_dimmed = false;
     _data.hal->keyboard()->setDimmed(false);
+    _data.hal->keyboard()->set_dim_time(_data.hal->settings()->getNumber("system", "dim_time") * 1000);
+
+    _data.hal->keyboard()->setDimmedCallback(
+        [this](bool dimmed)
+        {
+            if (!dimmed)
+            {
+                ESP_LOGD(TAG, "Screen on");
+                _data.hal->displayWakeup();
+                _data.hal->display()->setBrightness(_data.hal->settings()->getNumber("system", "brightness"));
+            }
+            else
+            {
+                ESP_LOGD(TAG, "Screen off");
+            }
+        });
 
     // Initialize WiFi module
     if (_data.hal->wifi()->init())
@@ -346,33 +361,12 @@ bool Launcher::_check_enter_pressed()
 
 void Launcher::_update_keyboard_state()
 {
-    // Update key list
+    // Update key list (keyboard owns dim timeout logic internally)
     _data.hal->keyboard()->updateKeyList();
     _data.hal->keyboard()->updateKeysState();
 
-    // check dim settings
-    uint32_t din_time = _data.hal->settings()->getNumber("system", "dim_time") * 1000;
+    // Dimming slowly, then put display to sleep for power saving
     uint32_t now = millis();
-    if ((now - _data.hal->keyboard()->lastPressedTime()) > din_time)
-    {
-        if (!_data.hal->keyboard()->isDimmed())
-        {
-            ESP_LOGD(TAG, "Screen off");
-            // slow dimming
-            // _data.is_dimmed = true;
-            _data.hal->keyboard()->setDimmed(true);
-        }
-    }
-    else
-    {
-        if (_data.hal->keyboard()->isDimmed())
-        {
-            ESP_LOGD(TAG, "Screen on");
-            _data.hal->display()->setBrightness(_data.hal->settings()->getNumber("system", "brightness"));
-            _data.hal->keyboard()->setDimmed(false);
-        }
-    }
-    // Dimming slowly
     static uint32_t last_dim_step_time = 0;
     if (now - last_dim_step_time > 50)
     {
@@ -381,7 +375,10 @@ void Launcher::_update_keyboard_state()
         if (_data.hal->keyboard()->isDimmed() && brightness > 0)
         {
             uint8_t dim_step = 5;
-            _data.hal->display()->setBrightness(brightness > dim_step ? brightness - dim_step : 0);
+            uint8_t new_brightness = brightness > dim_step ? brightness - dim_step : 0;
+            _data.hal->display()->setBrightness(new_brightness);
+            if (new_brightness == 0)
+                _data.hal->displaySleep();
         }
     }
     // Check for screenshot key combination: CTRL + SPACE
