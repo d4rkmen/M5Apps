@@ -296,6 +296,72 @@ void AppInstaller::_clear_file_list()
         delete item;
     }
     _data.file_list.clear();
+    _free_cloud_cache();
+}
+
+void AppInstaller::_free_cloud_cache()
+{
+    free(_data.cloud_json);
+    _data.cloud_json = nullptr;
+    _data.cloud_json_len = 0;
+    _data.cloud_col_tok = nullptr;
+    _data.cloud_app_tok = nullptr;
+    free(_data.cloud_idx);
+    _data.cloud_idx = nullptr;
+    _data.cloud_col_count = 0;
+    _data.cloud_app_count = 0;
+    _data.cloud_has_back = false;
+}
+
+int AppInstaller::_item_count()
+{
+    if (_data.source_type == source_cloud && _data.cloud_json)
+        return (_data.cloud_has_back ? 1 : 0) + _data.cloud_col_count + _data.cloud_app_count;
+    return (int)_data.file_list.size();
+}
+
+static std::string _json_str_view(const char* buf, int len, const char* path, int max_len = 0)
+{
+    const char* p;
+    int sz;
+    if (mjson_find(buf, len, path, &p, &sz) != MJSON_TOK_STRING || sz < 2)
+        return {};
+    int slen = sz - 2;
+    if (max_len > 0 && slen > max_len)
+        slen = max_len;
+    return std::string(p + 1, slen);
+}
+
+AppInstaller::FileItem_t AppInstaller::_item_at(int index)
+{
+    if (_data.source_type != source_cloud || !_data.cloud_json)
+        return *_data.file_list[index];
+
+    if (_data.cloud_has_back && index == 0)
+        return BACK_DIR_ITEM;
+
+    int adj = _data.cloud_has_back ? index - 1 : index;
+
+    if (adj < _data.cloud_col_count)
+    {
+        auto& s = _data.cloud_idx[adj];
+        auto name = _json_str_view(_data.cloud_col_tok + s.off, s.len, "$.n");
+        auto desc = _json_str_view(_data.cloud_col_tok + s.off, s.len, "$.d", 256);
+        return {std::move(name), true, 0, "", std::move(desc)};
+    }
+
+    adj -= _data.cloud_col_count;
+    if (adj < _data.cloud_app_count)
+    {
+        auto& s = _data.cloud_idx[_data.cloud_col_count + adj];
+        auto name = _json_str_view(_data.cloud_app_tok + s.off, s.len, "$.n");
+        auto fname = _json_str_view(_data.cloud_app_tok + s.off, s.len, "$.f");
+        auto desc = _json_str_view(_data.cloud_app_tok + s.off, s.len, "$.d", 256);
+        double size_val = 0;
+        mjson_get_number(_data.cloud_app_tok + s.off, s.len, "$.s", &size_val);
+        return {std::move(name), false, (uint64_t)size_val, std::move(fname), std::move(desc)};
+    }
+    return {"?", false, 0, "", ""};
 }
 
 void AppInstaller::_handle_source_selection()
@@ -507,12 +573,6 @@ void AppInstaller::_update_source_file_list()
 {
     _clear_file_list();
 
-    // Add parent directory entry if not in root
-    if (_data.current_path.find('/', 1) != std::string::npos)
-    {
-        _data.file_list.push_back(new FileItem_t(BACK_DIR_ITEM));
-    }
-
     switch (_data.source_type)
     {
     case source_cloud:
@@ -528,7 +588,10 @@ void AppInstaller::_update_source_file_list()
         {
             return;
         }
-        // Add parent directory entry if not in root
+        if (_data.current_path.find('/', 1) != std::string::npos)
+        {
+            _data.file_list.push_back(new FileItem_t(BACK_DIR_ITEM));
+        }
         _update_file_list();
         break;
     default:
@@ -673,26 +736,29 @@ bool AppInstaller::_render_file_list()
         (_data.source_type == source_cloud && _data.cloud_initialized))
     {
 
+        int total = _item_count();
+        auto sel = _item_at(_data.selected_file);
+
         _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
         _data.hal->canvas()->setTextColor(TFT_ORANGE);
-        std::string sizeInfo = _data.file_list[_data.selected_file]->is_dir || (_data.source_type == source_cloud)
+        std::string sizeInfo = sel.is_dir || (_data.source_type == source_cloud)
                                    ? ">>"
-                                   : PartitionTable::formatSize(_data.file_list[_data.selected_file]->size);
+                                   : PartitionTable::formatSize(sel.size);
         _data.hal->canvas()->drawString(
-            std::format("{} / {} : {}", _data.selected_file + 1, _data.file_list.size(), sizeInfo).c_str(),
+            std::format("{} / {} : {}", _data.selected_file + 1, total, sizeInfo).c_str(),
             5,
             16);
         // Draw file list
         int y_offset = 32;
         int items_drawn = 0;
-        const int max_width = LIST_MAX_DISPLAY_CHARS * 8; // Maximum width for text display
+        const int max_width = LIST_MAX_DISPLAY_CHARS * 8;
 
-        for (int i = _data.scroll_offset; i < _data.file_list.size() && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
+        for (int i = _data.scroll_offset; i < total && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
         {
-            bool is_dir = _data.file_list[i]->is_dir;
-            std::string display_name = _data.file_list[i]->name;
+            auto item = _item_at(i);
+            std::string display_name = item.name;
 
-            if (_data.file_list[i]->is_dir)
+            if (item.is_dir)
             {
                 display_name = "[" + display_name + "]";
             }
@@ -708,14 +774,14 @@ bool AppInstaller::_render_file_list()
                                                y_offset + 1 + 1,
                                                16,
                                                16,
-                                               is_dir ? image_data_folder_sel : image_data_rom_sel);
+                                               item.is_dir ? image_data_folder_sel : image_data_rom_sel);
                 _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
                 _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
             }
             else
             {
-                _data.hal->canvas()->pushImage(11, y_offset + 1 + 1, 16, 16, is_dir ? image_data_folder : image_data_rom);
-                _data.hal->canvas()->setTextColor(is_dir ? TFT_GREENYELLOW : TFT_WHITE);
+                _data.hal->canvas()->pushImage(11, y_offset + 1 + 1, 16, 16, item.is_dir ? image_data_folder : image_data_rom);
+                _data.hal->canvas()->setTextColor(item.is_dir ? TFT_GREENYELLOW : TFT_WHITE);
                 _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
             }
 
@@ -748,7 +814,8 @@ bool AppInstaller::_render_file_list()
 
 bool AppInstaller::_render_scrollbar()
 {
-    if (_data.file_list.size() <= LIST_MAX_VISIBLE_ITEMS)
+    int total = _item_count();
+    if (total <= LIST_MAX_VISIBLE_ITEMS)
     {
         return false;
     }
@@ -759,7 +826,7 @@ bool AppInstaller::_render_scrollbar()
                               32,
                               scrollbar_width,
                               scrollbar_height,
-                              (int)_data.file_list.size(),
+                              total,
                               LIST_MAX_VISIBLE_ITEMS,
                               _data.scroll_offset,
                               SCROLLBAR_MIN_HEIGHT);
@@ -768,7 +835,8 @@ bool AppInstaller::_render_scrollbar()
 
 bool AppInstaller::_handle_file_selection()
 {
-    if (_data.file_list.empty())
+    int total = _item_count();
+    if (total == 0)
     {
         return false;
     }
@@ -789,7 +857,6 @@ bool AppInstaller::_handle_file_selection()
                 if (_data.selected_file > 0)
                 {
                     _data.hal->playNextSound();
-                    // Fn holding? = home
                     if (keys_state.fn)
                     {
                         _data.selected_file = 0;
@@ -813,7 +880,6 @@ bool AppInstaller::_handle_file_selection()
                 if (_data.selected_file > 0)
                 {
                     _data.hal->playNextSound();
-                    // Jump up by visible_items count (page up)
                     int jump = LIST_MAX_VISIBLE_ITEMS;
                     _data.selected_file = std::max(0, _data.selected_file - jump);
                     _data.scroll_offset = std::max(0, _data.selected_file - (LIST_MAX_VISIBLE_ITEMS - 1));
@@ -826,13 +892,12 @@ bool AppInstaller::_handle_file_selection()
         {
             if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
-                if (_data.selected_file < _data.file_list.size() - 1)
+                if (_data.selected_file < total - 1)
                 {
                     _data.hal->playNextSound();
-                    // Fn holding? = end
                     if (keys_state.fn)
                     {
-                        _data.selected_file = _data.file_list.size() - 1;
+                        _data.selected_file = total - 1;
                     }
                     else
                     {
@@ -850,14 +915,13 @@ bool AppInstaller::_handle_file_selection()
         {
             if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
-                if (_data.selected_file < _data.file_list.size() - 1)
+                if (_data.selected_file < total - 1)
                 {
                     _data.hal->playNextSound();
-                    // Jump down by visible_items count (page down)
                     int jump = LIST_MAX_VISIBLE_ITEMS;
-                    _data.selected_file = std::min((int)_data.file_list.size() - 1, _data.selected_file + jump);
+                    _data.selected_file = std::min(total - 1, _data.selected_file + jump);
                     _data.scroll_offset =
-                        std::min(std::max(0, (int)_data.file_list.size() - LIST_MAX_VISIBLE_ITEMS), _data.selected_file);
+                        std::min(std::max(0, total - LIST_MAX_VISIBLE_ITEMS), _data.selected_file);
                     selection_changed = true;
                 }
             }
@@ -868,13 +932,12 @@ bool AppInstaller::_handle_file_selection()
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
 
-            const FileItem_t* selected_item = _data.file_list[_data.selected_file];
-            if (selected_item->is_dir)
+            FileItem_t selected_item = _item_at(_data.selected_file);
+            if (selected_item.is_dir)
             {
                 std::string new_path;
-                if (selected_item->name == "..")
+                if (selected_item.name == "..")
                 {
-                    // Go to parent directory
                     size_t last_slash = _data.current_path.find_last_of('/');
                     if (last_slash != std::string::npos)
                     {
@@ -885,35 +948,32 @@ bool AppInstaller::_handle_file_selection()
                 }
                 else
                 {
-                    // Enter directory
                     new_path = _data.current_path;
                     if (new_path != "/")
                         new_path += "/";
-                    new_path += selected_item->name;
+                    new_path += selected_item.name;
                 }
                 _navigate_directory(new_path);
             }
-            else if (_has_extension(selected_item->fname, ".bin"))
+            else if (_has_extension(selected_item.fname, ".bin"))
             {
                 if (_data.source_type == source_cloud)
                 {
-                    if (_show_confirmation_dialog(selected_item->name, "Install the app?"))
+                    if (_show_confirmation_dialog(selected_item.name, "Install the app?"))
                     {
-                        std::string url = _data.current_base_url + selected_item->fname;
-                        if (!_download_cloud_file(url, "", selected_item->name) && !_data.error_message.empty())
+                        std::string url = _data.current_base_url + selected_item.fname;
+                        if (!_download_cloud_file(url, "", selected_item.name) && !_data.error_message.empty())
                         {
                             UTILS::UI::show_error_dialog(_data.hal, "Install failed", _data.error_message);
                         }
                     }
-                    // Show confirmation dialog for .bin files
                 }
-                else if (_show_confirmation_dialog(selected_item->name, "Install the app?"))
+                else if (_show_confirmation_dialog(selected_item.name, "Install the app?"))
                 {
-                    // Get the full path to the firmware file
                     std::string filepath = _data.current_path;
                     if (filepath.back() != '/')
                         filepath += '/';
-                    filepath += selected_item->fname;
+                    filepath += selected_item.fname;
                     // Start the installation process
                     _install_firmware(filepath);
                 }
@@ -1029,20 +1089,18 @@ void AppInstaller::_navigate_directory(const std::string& path)
     _update_source_file_list();
 
     // If navigating back to parent directory, try to position at the directory we came from
+    int total = _item_count();
     if (old_path.length() > path.length())
     {
-        // Extract the last segment of the old path
         size_t last_slash = old_path.find_last_of('/');
         if (last_slash != std::string::npos)
         {
             std::string last_segment = old_path.substr(last_slash + 1);
-            // Find this segment in the file list
-            for (size_t i = 0; i < _data.file_list.size(); i++)
+            for (int i = 0; i < total; i++)
             {
-                if (_data.file_list[i]->name == last_segment)
+                if (_item_at(i).name == last_segment)
                 {
                     _data.selected_file = i;
-                    // Adjust scroll offset if needed
                     if (_data.selected_file >= LIST_MAX_VISIBLE_ITEMS)
                     {
                         _data.scroll_offset = _data.selected_file - LIST_MAX_VISIBLE_ITEMS + 1;
@@ -1119,14 +1177,14 @@ bool AppInstaller::_is_source_mounted()
 
 bool AppInstaller::_render_scrolling_list()
 {
-    if (!_is_source_mounted() || _data.file_list.empty())
+    if (!_is_source_mounted() || _item_count() == 0)
     {
         return false;
     }
 
-    // Get the text to display (file or directory name)
-    std::string display_name = _data.file_list[_data.selected_file]->name;
-    if (_data.file_list[_data.selected_file]->is_dir)
+    auto item = _item_at(_data.selected_file);
+    std::string display_name = item.name;
+    if (item.is_dir)
     {
         display_name = "[" + display_name + "]";
     }
@@ -1164,7 +1222,7 @@ bool AppInstaller::_render_scrolling_desc()
         return false;
     }
     std::string desc =
-        _data.state == state_source ? _data.sources[_data.selected_source].hint : _data.file_list[_data.selected_file]->info;
+        _data.state == state_source ? _data.sources[_data.selected_source].hint : _item_at(_data.selected_file).info;
     // no info, use current desc
     if (desc.length() == 0)
     {
@@ -1512,64 +1570,73 @@ void AppInstaller::_update_cloud_file_list()
 
     ESP_LOGI(TAG, "Free heap before parse: %d", esp_get_free_heap_size());
 
-    // Zero-copy: mjson_find returns pointer + length into existing buffer
-    auto json_str_view = [](const char* buf, int len, const char* path, int max_len = 0) -> std::string
-    {
-        const char* p;
-        int sz;
-        if (mjson_find(buf, len, path, &p, &sz) != MJSON_TOK_STRING || sz < 2)
-            return {};
-        int slen = sz - 2;
-        if (max_len > 0 && slen > max_len)
-            slen = max_len;
-        return std::string(p + 1, slen);
-    };
+    // Cache JSON buffer for lazy on-demand parsing (only visible items parsed at render time)
+    _data.cloud_json = buffer;
+    _data.cloud_json_len = total_read;
 
-    const char* tok;
-    int tok_len;
-
-    auto base_url = json_str_view(buffer, total_read, "$.b");
+    auto base_url = _json_str_view(buffer, total_read, "$.b");
     if (!base_url.empty())
         _data.current_base_url = std::move(base_url);
 
-    _data.current_desc = json_str_view(buffer, total_read, "$.d", 256);
+    _data.current_desc = _json_str_view(buffer, total_read, "$.d", 256);
 
-    // Parse collections (directories)
+    // Pass 1: locate arrays and count items
+    const char* tok;
+    int tok_len;
+    const char* col_tok = nullptr;
+    int col_tok_len = 0, col_count = 0;
+    const char* app_tok = nullptr;
+    int app_tok_len = 0, app_count = 0;
+
     if (mjson_find(buffer, total_read, "$.c", &tok, &tok_len) == MJSON_TOK_ARRAY)
     {
+        col_tok = tok;
+        col_tok_len = tok_len;
         int koff, klen, voff, vlen, vtype, off;
         for (off = 0; (off = mjson_next(tok, tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
-        {
-            auto name = json_str_view(tok + voff, vlen, "$.n");
-            if (!name.empty())
-            {
-                auto desc = json_str_view(tok + voff, vlen, "$.d", 256);
-                _data.file_list.push_back(new FileItem_t({std::move(name), true, 0, "", std::move(desc)}));
-            }
-        }
+            col_count++;
     }
-
-    // Parse apps (files)
     if (mjson_find(buffer, total_read, "$.a", &tok, &tok_len) == MJSON_TOK_ARRAY)
     {
+        app_tok = tok;
+        app_tok_len = tok_len;
         int koff, klen, voff, vlen, vtype, off;
         for (off = 0; (off = mjson_next(tok, tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
+            app_count++;
+    }
+
+    // Single allocation for offset index: [collections..., apps...]
+    int total = col_count + app_count;
+    using Span = Data_t::JsonSpan;
+    Span* idx = total ? (Span*)malloc(total * sizeof(Span)) : nullptr;
+
+    // Pass 2: fill index (collections first, then apps)
+    if (idx)
+    {
+        int i = 0;
+        if (col_tok)
         {
-            auto name = json_str_view(tok + voff, vlen, "$.n");
-            auto fname = json_str_view(tok + voff, vlen, "$.f");
-            if (!name.empty() && !fname.empty())
-            {
-                double size_val = 0;
-                mjson_get_number(tok + voff, vlen, "$.s", &size_val);
-                auto desc = json_str_view(tok + voff, vlen, "$.d", 256);
-                _data.file_list.push_back(
-                    new FileItem_t({std::move(name), false, (uint64_t)size_val, std::move(fname), std::move(desc)}));
-            }
+            int koff, klen, voff, vlen, vtype, off;
+            for (off = 0; (off = mjson_next(col_tok, col_tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
+                idx[i++] = {voff, vlen};
+        }
+        if (app_tok)
+        {
+            int koff, klen, voff, vlen, vtype, off;
+            for (off = 0; (off = mjson_next(app_tok, app_tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
+                idx[i++] = {voff, vlen};
         }
     }
 
-    free(buffer);
-    ESP_LOGI(TAG, "Free heap after parse: %d", esp_get_free_heap_size());
+    _data.cloud_col_tok = col_tok;
+    _data.cloud_col_count = col_count;
+    _data.cloud_app_tok = app_tok;
+    _data.cloud_app_count = app_count;
+    _data.cloud_idx = idx;
+    _data.cloud_has_back = (_data.current_path.find('/', 1) != std::string::npos);
+
+    ESP_LOGI(TAG, "Free heap after parse: %d, cols: %d, apps: %d, idx: %d bytes",
+             esp_get_free_heap_size(), col_count, app_count, total * (int)sizeof(Span));
 }
 
 // Add this helper method to install firmware directly from the cloud repository

@@ -92,7 +92,7 @@ namespace MOONCAKE
                 bool usb_initialized = false;
                 InstallerState_t state = state_source;
 
-                // File listing data
+                // File listing data (SD/USB use file_list, cloud uses cached JSON)
                 std::vector<FileItem_t*> file_list;
                 std::vector<SelectItem_t> sources;
                 std::string current_path = "/";
@@ -101,6 +101,21 @@ namespace MOONCAKE
                 int selected_source = 0;
                 int scroll_offset = 0;
                 bool list_needs_update = true;
+
+                // Cloud JSON cache (lazy parsing: only visible items parsed on demand)
+                // Offset index: 8 bytes per item for O(1) access (vs ~200 bytes/item for FileItem_t)
+                struct JsonSpan
+                {
+                    int off, len;
+                };
+                char* cloud_json = nullptr;
+                int cloud_json_len = 0;
+                const char* cloud_col_tok = nullptr;
+                const char* cloud_app_tok = nullptr;
+                JsonSpan* cloud_idx = nullptr;
+                int cloud_col_count = 0;
+                int cloud_app_count = 0;
+                bool cloud_has_back = false;
                 // render flags
                 bool update_sdcard_info = false;
                 bool update_usb_info = false;
@@ -126,6 +141,9 @@ namespace MOONCAKE
             Data_t _data;
             const FileItem_t BACK_DIR_ITEM = {"..", true, 0, "", ""};
             void _clear_file_list();
+            int _item_count();
+            FileItem_t _item_at(int index);
+            void _free_cloud_cache();
             // Helper methods
             bool _has_extension(const std::string& filename, const std::string& ext);
             std::string _truncate_path(const std::string& path, int max_chars);
