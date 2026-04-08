@@ -439,14 +439,6 @@ void Launcher::_update_system_state()
     {
         _data.system_state.voltage = _data.hal->getBatVoltage();
         _data.system_state.bat_level = _data.hal->getBatLevel(_data.system_state.voltage);
-        if (_data.system_state.bat_level >= 75)
-            _data.system_state.bat_state = 1;
-        else if (_data.system_state.bat_level >= 50)
-            _data.system_state.bat_state = 2;
-        else if (_data.system_state.bat_level >= 25)
-            _data.system_state.bat_state = 3;
-        else
-            _data.system_state.bat_state = 4;
 
         _bat_update_time_count = millis();
     }

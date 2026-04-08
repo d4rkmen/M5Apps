@@ -34,8 +34,6 @@ namespace MOONCAKE
             {
                 // 1 ~ 5
                 HAL::wifi_status_t wifi_status = HAL::WIFI_STATUS_IDLE;
-                // 1 ~ 4
-                uint8_t bat_state = 1;
                 std::string time = "12:34";
                 float voltage = 4.15;
                 uint8_t bat_level = 100;
