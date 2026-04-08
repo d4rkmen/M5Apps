@@ -90,7 +90,6 @@ void AppInstaller::onCreate()
                      DESC_SCROLL_PAUSE);
     hl_text_init(&_data.hint_hl_ctx, _data.hal->canvas(), 20, 1500);
     _update_source_list();
-
 }
 
 void AppInstaller::onResume()
@@ -343,7 +342,9 @@ AppInstaller::FileItem_t AppInstaller::_item_at(int index)
         auto tm = localtime(&entry.mtime);
         std::string info = std::format("{} {:04d}-{:02d}-{:02d}",
                                        PartitionTable::formatSize(entry.size),
-                                       tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+                                       tm->tm_year + 1900,
+                                       tm->tm_mon + 1,
+                                       tm->tm_mday);
         std::string fname(entry.name);
         std::string name = fname.substr(0, fname.find_last_of("."));
         return {std::move(name), false, entry.size, std::move(fname), std::move(info)};
@@ -706,13 +707,8 @@ bool AppInstaller::_render_file_list()
 
         _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
         _data.hal->canvas()->setTextColor(TFT_ORANGE);
-        std::string sizeInfo = sel.is_dir || (_data.source_type == source_cloud)
-                                   ? ">>"
-                                   : PartitionTable::formatSize(sel.size);
-        _data.hal->canvas()->drawString(
-            std::format("{} / {} : {}", _data.selected_file + 1, total, sizeInfo).c_str(),
-            5,
-            16);
+        std::string sizeInfo = sel.is_dir || (_data.source_type == source_cloud) ? ">>" : PartitionTable::formatSize(sel.size);
+        _data.hal->canvas()->drawString(std::format("{} / {} : {}", _data.selected_file + 1, total, sizeInfo).c_str(), 5, 16);
         // Draw file list
         int y_offset = 32;
         int items_drawn = 0;
@@ -885,8 +881,7 @@ bool AppInstaller::_handle_file_selection()
                     _data.hal->playNextSound();
                     int jump = LIST_MAX_VISIBLE_ITEMS;
                     _data.selected_file = std::min(total - 1, _data.selected_file + jump);
-                    _data.scroll_offset =
-                        std::min(std::max(0, total - LIST_MAX_VISIBLE_ITEMS), _data.selected_file);
+                    _data.scroll_offset = std::min(std::max(0, total - LIST_MAX_VISIBLE_ITEMS), _data.selected_file);
                     selection_changed = true;
                 }
             }
@@ -1600,8 +1595,12 @@ void AppInstaller::_update_cloud_file_list()
     _data.cloud_idx = idx;
     _data.cloud_has_back = (_data.current_path.find('/', 1) != std::string::npos);
 
-    ESP_LOGI(TAG, "Free heap after parse: %d, cols: %d, apps: %d, idx: %d bytes",
-             esp_get_free_heap_size(), col_count, app_count, total * (int)sizeof(Span));
+    ESP_LOGI(TAG,
+             "Free heap after parse: %d, cols: %d, apps: %d, idx: %d bytes",
+             esp_get_free_heap_size(),
+             col_count,
+             app_count,
+             total * (int)sizeof(Span));
 }
 
 // Add this helper method to install firmware directly from the cloud repository
@@ -1630,7 +1629,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
     { return std::format("{} / {} KB", (size_t)(current / 1024), (size_t)(total / 1024)); };
 
     std::string app_name = display_name;
-    size_t dot_pos = app_name.find_last_of('.');
+    size_t dot_pos = _has_extension(app_name, ".bin") ? app_name.find_last_of('.') : std::string::npos;
     if (dot_pos != std::string::npos)
     {
         app_name = app_name.substr(0, dot_pos);
@@ -1695,6 +1694,73 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
     }
 
     const size_t file_size = static_cast<size_t>(content_length);
+
+    struct SaveFile
+    {
+        FILE* f = nullptr;
+        std::string path;
+        HAL::Hal* hal = nullptr;
+        bool mounted_sd = false;
+        bool mounted_usb = false;
+        bool keep = false;
+        ~SaveFile()
+        {
+            if (f)
+            {
+                fclose(f);
+                if (!keep)
+                    unlink(path.c_str());
+            }
+            if (mounted_sd)
+                hal->sdcard()->eject();
+            if (mounted_usb)
+                hal->usb()->unmount();
+        }
+        void write(const void* data, size_t len)
+        {
+            if (f)
+                fwrite(data, 1, len, f);
+        }
+    } save_file;
+
+    std::string dl_path = _data.hal->settings()->getString("installer", "dl_path");
+    if (!dl_path.empty())
+    {
+        save_file.hal = _data.hal;
+
+        if (dl_path.starts_with("/sdcard") && !_data.hal->sdcard()->is_mounted())
+        {
+            if (_data.hal->sdcard()->mount(false))
+                save_file.mounted_sd = true;
+        }
+        else if (dl_path.starts_with("/usb") && !_data.hal->usb()->is_mounted())
+        {
+            if (_data.hal->usb()->mount())
+                save_file.mounted_usb = true;
+        }
+
+        std::string fname = display_name;
+        if (fname.empty())
+        {
+            size_t slash = url.find_last_of('/');
+            fname = (slash != std::string::npos) ? url.substr(slash + 1) : "app.bin";
+        }
+        if (!_has_extension(fname, ".bin"))
+            fname += ".bin";
+        save_file.path = dl_path + "/" + fname;
+        for (size_t i = 1; i < dl_path.size(); i++)
+        {
+            if (dl_path[i] == '/')
+                mkdir(dl_path.substr(0, i).c_str(), 0777);
+        }
+        mkdir(dl_path.c_str(), 0777);
+        save_file.f = fopen(save_file.path.c_str(), "wb");
+        if (save_file.f)
+            ESP_LOGI(TAG, "Saving download to %s", save_file.path.c_str());
+        else
+            ESP_LOGW(TAG, "Cannot open save path: %s", save_file.path.c_str());
+    }
+
     ESP_LOGI(TAG, "Free heap before download buffers: %u", (uint32_t)esp_get_free_heap_size());
     uint8_t* io_buffer = (uint8_t*)malloc(FILE_DOWNLOAD_BUFFER_SIZE);
     if (!io_buffer)
@@ -1749,6 +1815,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
             _data.state = state_browsing;
             return false;
         }
+        save_file.write(header_buf + header_read, (size_t)read_len);
         header_read += (size_t)read_len;
         total_read += (size_t)read_len;
     }
@@ -1810,6 +1877,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
                 _handle_installation_error(FlashStatus::ERROR_FILE_READ);
                 return false;
             }
+            save_file.write(io_buffer, (size_t)read_len);
             skip_remaining -= (size_t)read_len;
             total_read += (size_t)read_len;
         }
@@ -1828,6 +1896,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
                 _handle_installation_error(FlashStatus::ERROR_FILE_READ);
                 return false;
             }
+            save_file.write(table_buf + table_read, (size_t)read_len);
             table_read += (size_t)read_len;
             total_read += (size_t)read_len;
         }
@@ -2211,6 +2280,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
             return false;
         }
 
+        save_file.write(io_buffer, (size_t)bytes_read);
         total_read += bytes_read;
         stream_status = process_chunk(io_buffer, (size_t)bytes_read, stream_offset);
         if (stream_status != FlashStatus::SUCCESS)
@@ -2248,6 +2318,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
         }
     }
 
+    save_file.keep = true;
     _installation_progress_callback(100, std::format("Done: {} sec", (uint32_t)((millis() - start_time) / 1000)).c_str(), this);
     delay(2000);
     _handle_installation_complete();
