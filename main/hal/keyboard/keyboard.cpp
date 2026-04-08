@@ -80,10 +80,41 @@ void Keyboard::updateKeyList()
     {
         _keyboard_reader->update();
 
-        // Update last pressed time if keys are pressed
-        if (!_keyboard_reader->keyList().empty())
+        const auto& raw_keys = _keyboard_reader->keyList();
+
+        // Clear suppress flag when wake key is released
+        if (_suppress_key_until_release && raw_keys.empty())
+        {
+            _suppress_key_until_release = false;
+        }
+
+        // When dimmed, key press wakes screen but key is not processed
+        if (_is_dimmed && !raw_keys.empty())
+        {
+            setDimmed(false);
+            _suppress_key_until_release = true;
+        }
+
+        // Update last pressed time if keys are pressed (reset dim idle timer)
+        if (!raw_keys.empty())
         {
             _last_pressed_time = millis();
+        }
+
+        // Dim timeout logic: dim when idle, undim when recent activity
+        uint32_t now = millis();
+        if (_dim_time_ms > 0)
+        {
+            if ((now - _last_pressed_time) > _dim_time_ms)
+            {
+                if (!_is_dimmed)
+                    setDimmed(true);
+            }
+            else
+            {
+                if (_is_dimmed)
+                    setDimmed(false);
+            }
         }
     }
 }
@@ -181,5 +212,15 @@ bool Keyboard::isChanged()
 
 uint32_t Keyboard::lastPressedTime() const { return _last_pressed_time; }
 void Keyboard::resetLastPressedTime() { _last_pressed_time = millis(); }
-void Keyboard::setDimmed(bool value) { _is_dimmed = value; }
+void Keyboard::setDimmed(bool value)
+{
+    if (_is_dimmed != value)
+    {
+        _is_dimmed = value;
+        if (_dimmed_callback)
+            _dimmed_callback(_is_dimmed);
+    }
+}
 bool Keyboard::isDimmed() const { return _is_dimmed; }
+void Keyboard::setDimmedCallback(std::function<void(bool)> cb) { _dimmed_callback = std::move(cb); }
+void Keyboard::set_dim_time(uint32_t ms) { _dim_time_ms = ms; }

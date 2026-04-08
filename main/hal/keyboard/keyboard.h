@@ -9,9 +9,10 @@
  *
  */
 #pragma once
+#include <functional>
 #include <iostream>
-#include <vector>
 #include <memory>
+#include <vector>
 #include "board.h"
 #include "keyboard_reader.h"
 
@@ -277,12 +278,15 @@ namespace KEYBOARD
         uint8_t _last_key_size;
         uint32_t _last_pressed_time;
         bool _is_dimmed;
+        bool _suppress_key_until_release; // when true, keyList returns empty (wake-from-dim key not processed)
+        std::function<void(bool)> _dimmed_callback; // invoked when _is_dimmed changes
+        uint32_t _dim_time_ms = 0;                 // idle timeout before dimming (0 = disabled)
 
         HAL::Hal* _hal;
         HAL::BoardType _board_type;
 
     public:
-        Keyboard(HAL::Hal* hal) : _is_caps_locked(false), _last_key_size(0), _hal(hal), _board_type(HAL::BoardType::AUTO_DETECT)
+        Keyboard(HAL::Hal* hal) : _is_caps_locked(false), _last_key_size(0), _suppress_key_until_release(false), _hal(hal), _board_type(HAL::BoardType::AUTO_DETECT)
         {
             init();
         }
@@ -294,11 +298,11 @@ namespace KEYBOARD
         void updateKeyList();
         inline const std::vector<KEYBOARD::Point2D_t>& keyList() const
         {
-            if (_keyboard_reader)
-            {
-                return _keyboard_reader->keyList();
-            }
             static const std::vector<KEYBOARD::Point2D_t> empty_list;
+            if (_suppress_key_until_release)
+                return empty_list;
+            if (_keyboard_reader)
+                return _keyboard_reader->keyList();
             return empty_list;
         }
 
@@ -319,7 +323,14 @@ namespace KEYBOARD
         bool isChanged();
         bool isDimmed() const;
         void setDimmed(bool value);
+        void setDimmedCallback(std::function<void(bool)> cb);
+        void set_dim_time(uint32_t ms);
         inline uint8_t isPressed() const { return static_cast<uint8_t>(keyList().size()); }
         inline HAL::BoardType boardType() const { return _board_type; }
+        void setNotifyTask(TaskHandle_t task)
+        {
+            if (_keyboard_reader)
+                _keyboard_reader->setNotifyTask(task);
+        }
     };
 } // namespace KEYBOARD

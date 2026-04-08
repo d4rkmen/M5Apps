@@ -55,6 +55,12 @@ namespace KEYBOARD
     {
         TCA8418KeyboardReader* reader = static_cast<TCA8418KeyboardReader*>(arg);
         reader->_isr_flag = true;
+        if (reader->_notify_task)
+        {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            xTaskNotifyFromISR(reader->_notify_task, 1, eSetBits, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
     }
 
     void TCA8418KeyboardReader::init()
@@ -102,8 +108,25 @@ namespace KEYBOARD
             gpio_reset_pin((gpio_num_t)_interrupt_pin);
             gpio_set_direction((gpio_num_t)_interrupt_pin, GPIO_MODE_INPUT);
             gpio_set_intr_type((gpio_num_t)_interrupt_pin, GPIO_INTR_ANYEDGE);
-            gpio_install_isr_service(0);
-            gpio_isr_handler_add((gpio_num_t)_interrupt_pin, gpio_isr_handler, this);
+
+            // Install GPIO ISR service (if not already installed)
+            esp_err_t ret = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+            if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE)
+            {
+                ESP_LOGE(TAG, "Failed to install GPIO ISR service: %d", ret);
+                return;
+            }
+            if (ret == ESP_ERR_INVALID_STATE)
+            {
+                ESP_LOGD(TAG, "GPIO ISR service already installed");
+            }
+
+            ret = gpio_isr_handler_add((gpio_num_t)_interrupt_pin, gpio_isr_handler, this);
+            if (ret != ESP_OK)
+            {
+                ESP_LOGE(TAG, "Failed to add keyboard ISR handler: %d", ret);
+                return;
+            }
             ESP_LOGI(TAG, "Interrupt pin %d installed", _interrupt_pin);
         }
 
@@ -115,38 +138,51 @@ namespace KEYBOARD
 
     void TCA8418KeyboardReader::update()
     {
+        // Failsafe: if INT pin is asserted (low) but ISR flag wasn't set, recover
+        if (!_isr_flag && _interrupt_pin >= 0 && gpio_get_level((gpio_num_t)_interrupt_pin) == 0)
+        {
+            _isr_flag = true;
+        }
+
         if (!_isr_flag)
         {
             return;
         }
+
+        // Clear flag BEFORE processing so a new ISR during processing is not lost
+        _isr_flag = false;
+
         uint8_t int_stat = 0;
         if (!_tca8418->read_register(TCA8418_REG_INT_STAT, &int_stat))
             return;
-        // Check if key event interrupt is set
-        if (int_stat & TCA8418_REG_INT_STAT_K_INT)
+
+        if (!int_stat)
+            return;
+
+        // FIFO overflow: release events may have been lost, clear stale key state
+        if (int_stat & TCA8418_REG_INT_STAT_OVR_FLOW_INT)
         {
-            // get number of events
+            ESP_LOGW(TAG, "Key event FIFO overflow, clearing key state");
+            _key_list.clear();
+        }
+
+        // Drain key events from FIFO
+        if (int_stat & (TCA8418_REG_INT_STAT_K_INT | TCA8418_REG_INT_STAT_OVR_FLOW_INT))
+        {
             while (_tca8418->available() > 0)
             {
-                // Get the key event
                 uint8_t event_raw = _tca8418->get_event();
-
-                // Skip if no event
                 if (event_raw == 0)
                     break;
 
                 _key_event_raw_buffer = getKeyEventRaw(event_raw);
-
-                // Remap to match CARDPUTER coordinate system
                 remap(_key_event_raw_buffer);
-
-                // Update the key list
                 updateKeyList(_key_event_raw_buffer);
             }
-            // Clear the IRQ flag
-            _tca8418->write_register(TCA8418_REG_INT_STAT, TCA8418_REG_INT_STAT_K_INT);
         }
-        _isr_flag = false;
+
+        // Clear GPI event status, drain any remaining FIFO, and clear all INT_STAT flags
+        _tca8418->flush();
     }
 
     TCA8418KeyboardReader::KeyEventRaw_t TCA8418KeyboardReader::getKeyEventRaw(const uint8_t& eventRaw)
