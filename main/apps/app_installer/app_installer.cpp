@@ -20,8 +20,9 @@
 #include <cctype>
 #include <cstring>
 #include "../utils/ui/dialog.h"
+#include "../utils/ui/draw_helper.h"
 #include "esp_http_client.h"
-#include "cJSON.h"
+#include "mjson.h"
 
 static const char* TAG = "APP_INSTALLER";
 
@@ -98,7 +99,7 @@ void AppInstaller::onResume()
 
     _data.hal->canvas()->fillScreen(THEME_COLOR_BG);
     _data.hal->canvas()->setFont(FONT_16);
-    _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_ORANGE);
     _data.hal->canvas()->setTextSize(1);
     _data.hal->canvas_update();
     _data.state = state_source;
@@ -368,7 +369,7 @@ void AppInstaller::_handle_source_selection()
 bool AppInstaller::_render_source_list()
 {
     _data.hal->canvas()->fillScreen(THEME_COLOR_BG);
-    _data.hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_WHITE);
     _data.hal->canvas()->setFont(FONT_16);
     _data.hal->canvas()->drawString("Select source", 5, 0);
     // draw source image
@@ -383,10 +384,10 @@ bool AppInstaller::_render_source_list()
         if (i == _data.selected_source)
         {
             _data.hal->canvas()->fillSmoothCircle(_data.sources[i].x + 12, _data.sources[i].y + 8, 6, TFT_GREENYELLOW);
-            _data.hal->canvas()->setTextColor(TFT_GREENYELLOW, THEME_COLOR_BG);
+            _data.hal->canvas()->setTextColor(TFT_GREENYELLOW);
         }
         else
-            _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+            _data.hal->canvas()->setTextColor(TFT_ORANGE);
 
         _data.hal->canvas()->setCursor(_data.sources[i].x + 26, _data.sources[i].y);
         _data.hal->canvas()->print(_data.sources[i].name.c_str());
@@ -616,22 +617,10 @@ bool AppInstaller::_render_sdcard_info()
     else
         sd_label = name;
     _data.hal->canvas()->pushImage(_data.hal->canvas()->width() - width - 1, 0, 64, 32, image_data_sd_big);
-    // create prite to draw transparent background
-    LGFX_Sprite* sprite = new LGFX_Sprite(_data.hal->canvas());
-    sprite->createSprite(64, 32);
-    sprite->fillScreen(THEME_COLOR_TRANSPARENT);
-    sprite->setTextColor(TFT_BLACK, THEME_COLOR_TRANSPARENT);
-    sprite->setTextSize(1);
-    sprite->setFont(FONT_16);
-    sprite->drawRightString(sd_label.c_str(), sprite->width() - 1, 0);
-    sprite->drawRightString(sd_size.c_str(), sprite->width() - 1, 16);
-    sprite->pushSprite(_data.hal->canvas(), _data.hal->canvas()->width() - width - 1, 0, THEME_COLOR_TRANSPARENT);
-    sprite->deleteSprite();
-    delete sprite;
+    _data.hal->canvas()->setTextColor(TFT_BLACK);
+    _data.hal->canvas()->drawRightString(sd_label.c_str(), _data.hal->canvas()->width() - 1, 0);
+    _data.hal->canvas()->drawRightString(sd_size.c_str(), _data.hal->canvas()->width() - 1, 16);
 
-    // _data.hal->canvas()->setTextColor(TFT_BLACK, THEME_COLOR_ICON);
-    // _data.hal->canvas()->drawRightString(sd_label.c_str(), _data.hal->canvas()->width() - 1, 0);
-    // _data.hal->canvas()->drawRightString(sd_size.c_str(), _data.hal->canvas()->width() - 1, 15);
     _data.update_sdcard_info = false;
     return true;
 }
@@ -654,18 +643,9 @@ bool AppInstaller::_render_usb_info()
     else
         usb_label = name;
     _data.hal->canvas()->pushImage(_data.hal->canvas()->width() - width - 1, 0, 64, 32, image_data_usb_flash);
-    // create prite to draw transparent background
-    LGFX_Sprite* sprite = new LGFX_Sprite(_data.hal->canvas());
-    sprite->createSprite(64, 32);
-    sprite->fillScreen(THEME_COLOR_TRANSPARENT);
-    sprite->setTextColor(TFT_WHITE, THEME_COLOR_TRANSPARENT);
-    sprite->setTextSize(1);
-    sprite->setFont(FONT_16);
-    sprite->drawRightString(usb_label.c_str(), sprite->width() - 1, 0);
-    sprite->drawRightString(usb_size.c_str(), sprite->width() - 1, 16);
-    sprite->pushSprite(_data.hal->canvas(), _data.hal->canvas()->width() - width - 1, 0, THEME_COLOR_TRANSPARENT);
-    sprite->deleteSprite();
-    delete sprite;
+    _data.hal->canvas()->setTextColor(TFT_WHITE);
+    _data.hal->canvas()->drawRightString(usb_label.c_str(), _data.hal->canvas()->width() - 1, 0);
+    _data.hal->canvas()->drawRightString(usb_size.c_str(), _data.hal->canvas()->width() - 1, 16);
 
     _data.update_usb_info = false;
     return true;
@@ -694,7 +674,7 @@ bool AppInstaller::_render_file_list()
     {
 
         _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
-        _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+        _data.hal->canvas()->setTextColor(TFT_ORANGE);
         std::string sizeInfo = _data.file_list[_data.selected_file]->is_dir || (_data.source_type == source_cloud)
                                    ? ">>"
                                    : PartitionTable::formatSize(_data.file_list[_data.selected_file]->size);
@@ -729,13 +709,13 @@ bool AppInstaller::_render_file_list()
                                                16,
                                                16,
                                                is_dir ? image_data_folder_sel : image_data_rom_sel);
-                _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED, THEME_COLOR_BG_SELECTED);
+                _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
                 _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
             }
             else
             {
                 _data.hal->canvas()->pushImage(11, y_offset + 1 + 1, 16, 16, is_dir ? image_data_folder : image_data_rom);
-                _data.hal->canvas()->setTextColor(is_dir ? TFT_GREENYELLOW : TFT_WHITE, THEME_COLOR_BG);
+                _data.hal->canvas()->setTextColor(is_dir ? TFT_GREENYELLOW : TFT_WHITE);
                 _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
             }
 
@@ -772,22 +752,17 @@ bool AppInstaller::_render_scrollbar()
     {
         return false;
     }
-
-    const int width = _data.hal->canvas()->width();
     const int scrollbar_width = 6;
-    const int scrollbar_x = width - scrollbar_width - 2;      // 2 pixels padding from edge
-    const int scrollbar_height = 19 * LIST_MAX_VISIBLE_ITEMS; // Height of scrollbar area
-
-    int thumb_height =
-        std::max(SCROLLBAR_MIN_HEIGHT, (scrollbar_height * LIST_MAX_VISIBLE_ITEMS) / (int)_data.file_list.size());
-    int thumb_pos =
-        32 + (scrollbar_height - thumb_height) * _data.scroll_offset / (_data.file_list.size() - LIST_MAX_VISIBLE_ITEMS);
-
-    // Draw scrollbar track
-    _data.hal->canvas()->drawRect(scrollbar_x, 32, scrollbar_width, scrollbar_height, TFT_DARKGREY);
-
-    // Draw scrollbar thumb
-    _data.hal->canvas()->fillRect(scrollbar_x, thumb_pos, scrollbar_width, thumb_height, TFT_ORANGE);
+    const int scrollbar_height = 19 * LIST_MAX_VISIBLE_ITEMS;
+    UTILS::UI::draw_scrollbar(_data.hal->canvas(),
+                              _data.hal->canvas()->width() - scrollbar_width - 2,
+                              32,
+                              scrollbar_width,
+                              scrollbar_height,
+                              (int)_data.file_list.size(),
+                              LIST_MAX_VISIBLE_ITEMS,
+                              _data.scroll_offset,
+                              SCROLLBAR_MIN_HEIGHT);
     return true;
 }
 
@@ -1536,89 +1511,66 @@ void AppInstaller::_update_cloud_file_list()
     esp_http_client_cleanup(client);
 
     ESP_LOGI(TAG, "Free heap before parse: %d", esp_get_free_heap_size());
-    // Parse JSON response
-    cJSON* root = cJSON_Parse(buffer);
-    free(buffer);
-    ESP_LOGI(TAG, "Free heap after parse: %d", esp_get_free_heap_size());
 
-    if (!root)
+    // Parse JSON in-place using mjson (zero heap allocation)
+    const char* tok;
+    int tok_len;
+    char str_buf[256];
+
+    if (mjson_get_string(buffer, total_read, "$.b", str_buf, sizeof(str_buf)) > 0)
     {
-        // ESP_LOGE(TAG, "Failed to parse JSON");
-        _data.cloud_initialized = false;
-        // display error message
-        UTILS::UI::show_error_dialog(_data.hal, "Error", "Failed to parse JSON");
-        return;
+        _data.current_base_url = str_buf;
     }
 
-    // Parse collections (directories)
-    cJSON* base_url = cJSON_GetObjectItem(root, "b");
-    if (base_url)
+    if (mjson_get_string(buffer, total_read, "$.d", str_buf, sizeof(str_buf)) > 0)
     {
-        // update current collection url, if base url is set
-        _data.current_base_url = base_url->valuestring;
-    }
-    cJSON* descr = cJSON_GetObjectItem(root, "d");
-    if (descr)
-    {
-        // set current descr to the current collection listing
-        // visible when child items has no description
-        _data.current_desc = descr->valuestring;
+        _data.current_desc = str_buf;
     }
     else
     {
-        // no descr, use blank
         _data.current_desc = "";
     }
-    // ESP_LOGD(TAG, "Current base URL: %s, desc: %s", _data.current_base_url.c_str(), _data.current_desc.c_str());
-    cJSON* collections = cJSON_GetObjectItem(root, "c");
-    if (collections)
+
+    // Parse collections (directories)
+    if (mjson_find(buffer, total_read, "$.c", &tok, &tok_len) == MJSON_TOK_ARRAY)
     {
-        cJSON* collection;
-        cJSON_ArrayForEach(collection, collections)
+        int koff, klen, voff, vlen, vtype, off;
+        for (off = 0; (off = mjson_next(tok, tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
         {
-            cJSON* name = cJSON_GetObjectItem(collection, "n");
-            cJSON* descr = cJSON_GetObjectItem(collection, "d");
-            // ESP_LOGD(TAG,
-            //          "Collection: %s, desc: %s, free ram: %d, items: %d",
-            //          name->valuestring,
-            //          descr->valuestring,
-            //          esp_get_free_heap_size(),
-            //          _data.file_list.size());
-            if (name && descr)
+            char name[128] = {0};
+            char desc[256] = {0};
+            int nlen = mjson_get_string(tok + voff, vlen, "$.n", name, sizeof(name));
+            int dlen = mjson_get_string(tok + voff, vlen, "$.d", desc, sizeof(desc));
+            if (nlen > 0 && dlen > 0)
             {
-                _data.file_list.push_back(new FileItem_t({name->valuestring,
-                                                          true, // is_dir
-                                                          0,    // size
-                                                          "",   // fname
-                                                          descr->valuestring}));
+                _data.file_list.push_back(new FileItem_t({name, true, 0, "", desc}));
             }
         }
     }
 
     // Parse apps (files)
-    cJSON* apps = cJSON_GetObjectItem(root, "a");
-    if (apps)
+    if (mjson_find(buffer, total_read, "$.a", &tok, &tok_len) == MJSON_TOK_ARRAY)
     {
-        cJSON* app;
-        cJSON_ArrayForEach(app, apps)
+        int koff, klen, voff, vlen, vtype, off;
+        for (off = 0; (off = mjson_next(tok, tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
         {
-            cJSON* name = cJSON_GetObjectItem(app, "n");
-            cJSON* fname = cJSON_GetObjectItem(app, "f");
-            cJSON* descr = cJSON_GetObjectItem(app, "d");
-            cJSON* size = cJSON_GetObjectItem(app, "s");
-            if (name && fname)
+            char name[128] = {0};
+            char fname[128] = {0};
+            char desc[256] = {0};
+            double size_val = 0;
+            int nlen = mjson_get_string(tok + voff, vlen, "$.n", name, sizeof(name));
+            int flen = mjson_get_string(tok + voff, vlen, "$.f", fname, sizeof(fname));
+            mjson_get_string(tok + voff, vlen, "$.d", desc, sizeof(desc));
+            mjson_get_number(tok + voff, vlen, "$.s", &size_val);
+            if (nlen > 0 && flen > 0)
             {
-                // ESP_LOGI(TAG, "Free heap: %d, stack: %d", esp_get_free_heap_size(), _free_stack_size());
-                _data.file_list.push_back(new FileItem_t({name->valuestring,
-                                                          false,                                 // is_dir
-                                                          (uint64_t)(size ? size->valueint : 0), // size
-                                                          fname ? fname->valuestring : "",       // fname
-                                                          descr ? descr->valuestring : ""}));
+                _data.file_list.push_back(new FileItem_t({name, false, (uint64_t)size_val, fname, desc}));
             }
         }
     }
 
-    cJSON_Delete(root);
+    free(buffer);
+    ESP_LOGI(TAG, "Free heap after parse: %d", esp_get_free_heap_size());
 }
 
 // Add this helper method to install firmware directly from the cloud repository
