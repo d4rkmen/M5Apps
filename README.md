@@ -25,7 +25,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 ### Built-in Applications
 
 1. **Launcher** - Main application launcher with smooth menu navigation. Use `I` key for information about the app. Use `ENTER` key to open the app. Use `Home` button (on the side) to go back to the launcher.
-2. **Installer** - Install apps from various sources (cloud, SD card, USB)
+2. **Installer** - Install apps from various sources (cloud, SD card, USB). Optionally saves downloaded firmware to SD card/USB for offline use.
    ![Installer](pics/installer.png)
 3. **Settings** - System configuration and user preferences
    ![Settings](pics/settings.png)
@@ -48,7 +48,8 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 - **Screen Dimming**: Automatic screen dimming with timeout
 - **Boot Sound & Logo**: Customizable boot experience
 - **Keyboard Navigation**: Full keyboard support with improved navigation
-- **Battery Monitoring**: Real-time battery status display
+- **Battery Monitoring**: Real-time battery status with voltage and level indicator
+- **ES8311 Audio Codec**: Proper audio support for CardPuter ADV
 - **Settings Export/Import**: Backup and restore your configuration
 
 ## Hardware Support
@@ -146,8 +147,9 @@ M5Apps/
 │   ├── settings/           # Settings management
 │   └── main.cpp            # Application entry point
 ├── components/             # Custom components
-│   ├── M5GFX/             # Graphics library
+│   ├── LovyanGFX/         # Graphics library
 │   ├── esp-now/           # ESP-NOW communication
+│   ├── mjson/             # Zero-allocation JSON parser
 │   ├── mooncake/          # Application framework
 │   └── flood/             # Flood app components
 ├── bootloader_components/ # Custom bootloader components
@@ -185,8 +187,8 @@ apps_app   app   factory  0x10000  0x180000
 3. Select the app you want to install
 4. Follow the installation prompts
 
-   **Cloud source**: has a mirror of `M5Burner` CardPuter category, refreshing automtically once an hour. `TOP-20` is the list of tested and usefull apps by the community. Remote files are flashed to the device directly, without need to download to the SD card or USB drive.
-   Apps distributed as single partition images are flashing to the device directly. Multiple partition images are also supported. User can remove all installed apps, or use `Custom install` option in settings to install ony selected partitions of multiple partition images (confirmation request dialog is shown).
+   **Cloud source**: has a mirror of `M5Burner` CardPuter category, refreshing automatically once an hour. `TOP-20` is the list of tested and useful apps by the community. Remote files are flashed to the device directly, without need to download to the SD card or USB drive. Optionally, downloaded firmware can be saved to a configurable path (e.g. `/sdcard/downloads`) for offline use — set `dl_path` in Installer settings.
+   Apps distributed as single partition images are flashing to the device directly. Multiple partition images are also supported. User can remove all installed apps, or use `Custom install` option in settings to install only selected partitions of multiple partition images (confirmation request dialog is shown).
 
 ### Settings
 
