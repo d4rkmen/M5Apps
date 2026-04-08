@@ -1478,7 +1478,7 @@ void AppInstaller::_update_cloud_file_list()
         esp_http_client_cleanup(client);
         _data.cloud_initialized = false;
         // display error message
-        UTILS::UI::show_error_dialog(_data.hal, "Error", std::format("Failed to open connection (0x%x)", (int)err));
+        UTILS::UI::show_error_dialog(_data.hal, "Error", std::format("Failed to open connection (0x{:02X})", (uint32_t)err));
         return;
     }
 
@@ -1512,24 +1512,27 @@ void AppInstaller::_update_cloud_file_list()
 
     ESP_LOGI(TAG, "Free heap before parse: %d", esp_get_free_heap_size());
 
-    // Parse JSON in-place using mjson (zero heap allocation)
+    // Zero-copy: mjson_find returns pointer + length into existing buffer
+    auto json_str_view = [](const char* buf, int len, const char* path, int max_len = 0) -> std::string
+    {
+        const char* p;
+        int sz;
+        if (mjson_find(buf, len, path, &p, &sz) != MJSON_TOK_STRING || sz < 2)
+            return {};
+        int slen = sz - 2;
+        if (max_len > 0 && slen > max_len)
+            slen = max_len;
+        return std::string(p + 1, slen);
+    };
+
     const char* tok;
     int tok_len;
-    char str_buf[256];
 
-    if (mjson_get_string(buffer, total_read, "$.b", str_buf, sizeof(str_buf)) > 0)
-    {
-        _data.current_base_url = str_buf;
-    }
+    auto base_url = json_str_view(buffer, total_read, "$.b");
+    if (!base_url.empty())
+        _data.current_base_url = std::move(base_url);
 
-    if (mjson_get_string(buffer, total_read, "$.d", str_buf, sizeof(str_buf)) > 0)
-    {
-        _data.current_desc = str_buf;
-    }
-    else
-    {
-        _data.current_desc = "";
-    }
+    _data.current_desc = json_str_view(buffer, total_read, "$.d", 256);
 
     // Parse collections (directories)
     if (mjson_find(buffer, total_read, "$.c", &tok, &tok_len) == MJSON_TOK_ARRAY)
@@ -1537,13 +1540,11 @@ void AppInstaller::_update_cloud_file_list()
         int koff, klen, voff, vlen, vtype, off;
         for (off = 0; (off = mjson_next(tok, tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
         {
-            char name[128] = {0};
-            char desc[256] = {0};
-            int nlen = mjson_get_string(tok + voff, vlen, "$.n", name, sizeof(name));
-            int dlen = mjson_get_string(tok + voff, vlen, "$.d", desc, sizeof(desc));
-            if (nlen > 0 && dlen > 0)
+            auto name = json_str_view(tok + voff, vlen, "$.n");
+            if (!name.empty())
             {
-                _data.file_list.push_back(new FileItem_t({name, true, 0, "", desc}));
+                auto desc = json_str_view(tok + voff, vlen, "$.d", 256);
+                _data.file_list.push_back(new FileItem_t({std::move(name), true, 0, "", std::move(desc)}));
             }
         }
     }
@@ -1554,17 +1555,15 @@ void AppInstaller::_update_cloud_file_list()
         int koff, klen, voff, vlen, vtype, off;
         for (off = 0; (off = mjson_next(tok, tok_len, off, &koff, &klen, &voff, &vlen, &vtype)) != 0;)
         {
-            char name[128] = {0};
-            char fname[128] = {0};
-            char desc[256] = {0};
-            double size_val = 0;
-            int nlen = mjson_get_string(tok + voff, vlen, "$.n", name, sizeof(name));
-            int flen = mjson_get_string(tok + voff, vlen, "$.f", fname, sizeof(fname));
-            mjson_get_string(tok + voff, vlen, "$.d", desc, sizeof(desc));
-            mjson_get_number(tok + voff, vlen, "$.s", &size_val);
-            if (nlen > 0 && flen > 0)
+            auto name = json_str_view(tok + voff, vlen, "$.n");
+            auto fname = json_str_view(tok + voff, vlen, "$.f");
+            if (!name.empty() && !fname.empty())
             {
-                _data.file_list.push_back(new FileItem_t({name, false, (uint64_t)size_val, fname, desc}));
+                double size_val = 0;
+                mjson_get_number(tok + voff, vlen, "$.s", &size_val);
+                auto desc = json_str_view(tok + voff, vlen, "$.d", 256);
+                _data.file_list.push_back(
+                    new FileItem_t({std::move(name), false, (uint64_t)size_val, std::move(fname), std::move(desc)}));
             }
         }
     }

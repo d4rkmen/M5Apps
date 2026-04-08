@@ -299,8 +299,22 @@ static int mjson_unescape(const char *s, int len, char *to, int n) {
   int i, j;
   for (i = 0, j = 0; i < len && j < n; i++, j++) {
     if (s[i] == '\\' && i + 5 < len && s[i + 1] == 'u') {
-      if (s[i + 2] != '0' || s[i + 3] != '0') return -1;
-      ((unsigned char *) to)[j] = mjson_unhex_nimble(s + i + 4);
+      unsigned int cp = (unsigned int) ((unhex((unsigned char) s[i + 2]) << 12) |
+                                        (unhex((unsigned char) s[i + 3]) << 8) |
+                                        (unhex((unsigned char) s[i + 4]) << 4) |
+                                         unhex((unsigned char) s[i + 5]));
+      if (cp < 0x80) {
+        to[j] = (char) cp;
+      } else if (cp < 0x800) {
+        if (j + 1 >= n) return -1;
+        to[j]     = (char) (0xC0 | (cp >> 6));
+        to[++j]   = (char) (0x80 | (cp & 0x3F));
+      } else {
+        if (j + 2 >= n) return -1;
+        to[j]     = (char) (0xE0 | (cp >> 12));
+        to[++j]   = (char) (0x80 | ((cp >> 6) & 0x3F));
+        to[++j]   = (char) (0x80 | (cp & 0x3F));
+      }
       i += 5;
     } else if (s[i] == '\\' && i + 1 < len) {
       int c = mjson_esc(s[i + 1], 0);
@@ -311,7 +325,10 @@ static int mjson_unescape(const char *s, int len, char *to, int n) {
       to[j] = s[i];
     }
   }
-  if (j >= n) return -1;
+  if (j >= n) {
+    if (n > 0) to[n - 1] = '\0';
+    return n - 1;
+  }
   if (n > 0) to[j] = '\0';
   return j;
 }
