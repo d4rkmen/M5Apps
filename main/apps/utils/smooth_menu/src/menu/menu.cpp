@@ -118,23 +118,25 @@ namespace SMOOTH_MENU {
             _anim_cntr.open.resetTime(currentTime);
         }
 
-
-        if (_anim_cntr.open.isFinished(currentTime)) {
+        /* Skip once the open animation is fully done and positions are final */
+        if (_anim_cntr.isFinished) {
             return;
         }
 
-
-        /* Iterate item list */
+        /* Compute positions using the CURRENT time so they're never stale */
         for (int i = 0; i < _item_list.size(); i++) {
             _anim_cntr.open.setAnim(_cfg.animPath_open, 0, _item_list[i]->x_target, _cfg.animTime_open);
-            _item_list[i]->x = _anim_cntr.open.getValue(_anim_cntr.currentTime);
+            _item_list[i]->x = _anim_cntr.open.getValue(currentTime);
             _anim_cntr.open.setAnim(_cfg.animPath_open, 0, _item_list[i]->y_target, _cfg.animTime_open);
-            _item_list[i]->y = _anim_cntr.open.getValue(_anim_cntr.currentTime);
+            _item_list[i]->y = _anim_cntr.open.getValue(currentTime);
         }
 
-
-        /* Update current time */
         _anim_cntr.currentTime = currentTime;
+
+        /* Mark finished AFTER the loop so items reach their end_value at least once */
+        if (_anim_cntr.open.isFinished(currentTime)) {
+            _anim_cntr.isFinished = true;
+        }
     }
 
 
