@@ -100,5 +100,17 @@ extern "C" void app_main(void)
 
     // Update framework
     while (1)
-        mooncake.update();
+    {
+        if (hal.isDisplaySleeping())
+        {
+            hal.keyboard()->updateKeyList();
+            delay(50);
+        }
+        else
+        {
+            // Update UI framework
+            mooncake.update();
+            delay(1);
+        }
+    }
 }
