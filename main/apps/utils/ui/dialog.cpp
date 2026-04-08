@@ -1,4 +1,5 @@
 #include "dialog.h"
+#include "draw_helper.h"
 #include "esp_log.h"
 #include "apps/utils/anim/hl_text.h"
 #include "apps/utils/screenshot/screenshot_tools.h"
@@ -63,7 +64,7 @@ namespace UTILS
             if (title_fits)
             {
                 // draw title
-                hal->canvas()->setTextColor(title_color, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(title_color);
                 hal->canvas()->drawCenterString(title.c_str(), dialog_x + DIALOG_WIDTH / 2, dialog_y + 10);
             }
             else
@@ -78,7 +79,7 @@ namespace UTILS
             if (message_fits)
             {
                 // draw message
-                hal->canvas()->setTextColor(message_color, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(message_color);
                 hal->canvas()->drawCenterString(message.c_str(), dialog_x + DIALOG_WIDTH / 2, dialog_y + 10 + VERTICAL_SPACING);
             }
             else
@@ -95,7 +96,7 @@ namespace UTILS
             if (close_timeout_ms > 0)
             {
                 hal->canvas()->setFont(FONT_10);
-                hal->canvas()->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_DARKGREY);
                 hal->canvas()->drawCenterString("[DEL] CANCEL", dialog_x + DIALOG_WIDTH / 2, dialog_y + DIALOG_HEIGHT - 10);
                 hal->canvas()->setFont(FONT_16);
             }
@@ -139,7 +140,7 @@ namespace UTILS
                 }
                 else if (close_timeout_ms > 0)
                 {
-                    hal->canvas()->setTextColor(message_color, THEME_COLOR_BG);
+                    hal->canvas()->setTextColor(message_color);
                     hal->canvas()->drawCenterString(
                         std::format("{} {} sec", message, (uint32_t)((close_timeout_ms - (now - start_time)) / 1000)).c_str(),
                         dialog_x + DIALOG_WIDTH / 2,
@@ -265,8 +266,7 @@ namespace UTILS
                             ->drawRoundRect(btn_x, buttons_y, BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_CORNER_RADIUS, TFT_WHITE);
 
                         // Draw button text
-                        hal->canvas()->setTextColor(is_selected ? TFT_BLACK : buttons[i].text_color,
-                                                    is_selected ? THEME_COLOR_BG_SELECTED : buttons[i].bg_color);
+                        hal->canvas()->setTextColor(is_selected ? TFT_BLACK : buttons[i].text_color);
                         hal->canvas()->drawCenterString(buttons[i].text.c_str(), btn_x + BUTTON_WIDTH / 2, buttons_y + 2);
                     }
 
@@ -346,7 +346,7 @@ namespace UTILS
             }
 
             // Draw title at top of dialog
-            hal->canvas()->setTextColor(TFT_CYAN, THEME_COLOR_BG);
+            hal->canvas()->setTextColor(TFT_CYAN);
             hal->canvas()->drawCenterString(display_title.c_str(), dialog_x + DIALOG_WIDTH / 2, dialog_y + 10);
 
             // Progress bar dimensions
@@ -366,20 +366,9 @@ namespace UTILS
                     hal->canvas()->fillRoundRect(bar_x, bar_y, fill_width, bar_h, 4, THEME_COLOR_BG_SELECTED);
                 }
                 // create sprite for transparent text
-                LGFX_Sprite* text = new LGFX_Sprite(hal->canvas());
-                if (text)
-                {
-                    text->createSprite(bar_w, bar_h);
-                    text->fillScreen(TFT_TRANSPARENT);
-                    // Draw percentage text centered in progress bar
-                    text->setTextColor(fill_width > bar_w / 2 ? TFT_BLACK : TFT_WHITE, TFT_TRANSPARENT);
-                    // + 1);
-                    text->setFont(FONT_16);
-                    text->drawCenterString(std::format("{}%", progress).c_str(), text->width() / 2, 1);
-                    text->pushSprite(hal->canvas(), bar_x, bar_y, TFT_TRANSPARENT);
-                    text->deleteSprite();
-                    delete text;
-                }
+                hal->canvas()->setTextColor(fill_width > bar_w / 2 ? TFT_BLACK : TFT_WHITE);
+                hal->canvas()->setFont(FONT_16);
+                hal->canvas()->drawCenterString(std::format("{}%", progress).c_str(), bar_x + bar_w / 2, bar_y + 1);
             }
             else
             {
@@ -410,7 +399,7 @@ namespace UTILS
                 }
             }
             // Draw status message below progress bar
-            hal->canvas()->setTextColor(TFT_LIGHTGREY, THEME_COLOR_BG);
+            hal->canvas()->setTextColor(TFT_LIGHTGREY);
             std::string status = message;
             if (hal->canvas()->textWidth(status.c_str()) > DIALOG_WIDTH - 20)
             {
@@ -461,7 +450,7 @@ namespace UTILS
                 hal->canvas()->fillScreen(THEME_COLOR_BG);
 
                 // Draw title
-                hal->canvas()->setTextColor(TFT_CYAN, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_CYAN);
                 hal->canvas()->setFont(FONT_16);
                 hal->canvas()->drawString(title.c_str(), 5, 5);
 
@@ -494,7 +483,7 @@ namespace UTILS
 
                 // Draw visible text
                 std::string visible_text = input.substr(scroll_offset, max_visible_chars);
-                hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_WHITE);
                 hal->canvas()->drawString(visible_text.c_str(), box_x + 5, box_y + 5);
 
                 // Draw cursor
@@ -506,7 +495,7 @@ namespace UTILS
 
                 // Draw min/max hint
                 hal->canvas()->setFont(FONT_10);
-                hal->canvas()->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_DARKGREY);
                 hal->canvas()->drawString(std::format("Range: {} to {}", min_value, max_value).c_str(),
                                           box_x,
                                           box_y + box_h + 5);
@@ -716,7 +705,7 @@ namespace UTILS
                 hal->canvas()->fillScreen(THEME_COLOR_BG);
 
                 // Draw title
-                hal->canvas()->setTextColor(TFT_CYAN, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_CYAN);
                 hal->canvas()->setFont(FONT_16);
                 hal->canvas()->drawString(title.c_str(), 5, 5);
 
@@ -748,7 +737,7 @@ namespace UTILS
                 // Draw visible text
                 std::string display_text =
                     is_password ? std::string(input.length(), '*') : input.substr(scroll_offset, max_visible_chars);
-                hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_WHITE);
                 hal->canvas()->drawString(display_text.c_str(), box_x + 5, box_y + 5);
 
                 // Draw cursor
@@ -768,11 +757,10 @@ namespace UTILS
                 hal->canvas()->setFont(FONT_10);
                 hal->canvas()->setTextColor(keys_state.fn      ? TFT_ORANGE
                                             : keys_state.shift ? TFT_BLUE
-                                                               : TFT_DARKGREY,
-                                            THEME_COLOR_BG);
+                                                               : TFT_DARKGREY);
                 hal->canvas()->drawString(keys_state.fn ? "Fn" : keys_state.shift ? "ABC" : "abc", box_x, box_y + box_h + 5);
                 // draw number of symbols
-                hal->canvas()->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+                hal->canvas()->setTextColor(TFT_DARKGREY);
                 hal->canvas()->drawRightString(std::format("{} / {}", input.length(), max_length).c_str(),
                                                box_x + box_w - 5,
                                                box_y + box_h + 5);
@@ -917,90 +905,135 @@ namespace UTILS
             const int max_visible_items = (hal->canvas()->height() - y_start - 12) / line_height;
             int scrollbar_height = line_height * max_visible_items;
             int scrollbar_width = 6;
-            // check selected index and change scroll offset
             if (selected_index >= max_visible_items)
             {
                 scroll_offset = selected_index - max_visible_items + 1;
             }
 
             is_repeat = false;
-            // create hint highlight context
             HLTextContext_t hint_ctx;
             hl_text_init(&hint_ctx, hal->canvas(), 20, 1500);
             is_repeat = false;
             next_fire_ts = 0xFFFFFFFF;
+
+            const int text_area_width = hal->canvas()->width() - 10 - scrollbar_width - 5 - 2;
+            SCROLL_TEXT::ScrollTextContext_t item_scroll_ctx;
+            SCROLL_TEXT::scroll_text_init_ex(&item_scroll_ctx,
+                                             hal->canvas(),
+                                             text_area_width,
+                                             line_height - 2,
+                                             20,
+                                             2000,
+                                             FONT_16);
+            int prev_selected_index = -1;
+            bool need_update = true;
+            const int text_x = 10;
+
             while (selecting)
             {
-                hal->canvas()->fillScreen(THEME_COLOR_BG);
-
-                // Draw title
-                hal->canvas()->setTextColor(TFT_CYAN, THEME_COLOR_BG);
-                hal->canvas()->setFont(FONT_16);
-                hal->canvas()->drawString(title.c_str(), 5, 0);
-
-                // Draw list of items
-                int y_offset = y_start;
-                for (int i = scroll_offset; i < items.size() && i < scroll_offset + max_visible_items; i++)
+                bool selection_changed = (selected_index != prev_selected_index);
+                if (selection_changed)
                 {
-                    if (i == selected_index)
+                    SCROLL_TEXT::scroll_text_reset(&item_scroll_ctx);
+                    prev_selected_index = selected_index;
+                    need_update = true;
+
+                    hal->canvas()->fillScreen(THEME_COLOR_BG);
+
+                    hal->canvas()->setTextColor(TFT_CYAN);
+                    hal->canvas()->setFont(FONT_16);
+                    hal->canvas()->drawString(title.c_str(), 5, 0);
+
+                    hal->canvas()->setFont(FONT_16);
+                    int y_offset = y_start;
+                    for (int i = scroll_offset; i < (int)items.size() && i < scroll_offset + max_visible_items; i++)
                     {
-                        hal->canvas()->fillRect(5,
-                                                y_offset + 1,
-                                                hal->canvas()->width() - 5 - scrollbar_width - 2 - 1,
-                                                18,
-                                                THEME_COLOR_BG_SELECTED);
-                        hal->canvas()->setTextColor(TFT_BLACK, THEME_COLOR_BG_SELECTED);
-                    }
-                    else
-                    {
-                        hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+                        if (i == selected_index)
+                        {
+                            hal->canvas()->fillRect(5,
+                                                    y_offset + 1,
+                                                    hal->canvas()->width() - 5 - scrollbar_width - 2 - 1,
+                                                    line_height - 2,
+                                                    THEME_COLOR_BG_SELECTED);
+                            hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
+                        }
+                        else
+                        {
+                            hal->canvas()->setTextColor(THEME_COLOR_UNSELECTED);
+                        }
+
+                        bool text_fits = hal->canvas()->textWidth(items[i].c_str()) <= text_area_width;
+                        if (i == selected_index && !text_fits)
+                        {
+                            SCROLL_TEXT::scroll_text_render(&item_scroll_ctx,
+                                                            items[i].c_str(),
+                                                            text_x,
+                                                            y_offset + 1,
+                                                            THEME_COLOR_SELECTED,
+                                                            THEME_COLOR_BG_SELECTED);
+                        }
+                        else
+                        {
+                            std::string display_name = items[i];
+                            if (!text_fits)
+                            {
+                                int char_w = hal->canvas()->textWidth("0");
+                                display_name = display_name.substr(0, char_w > 0 ? text_area_width / char_w : 20) + ">";
+                            }
+                            hal->canvas()->drawString(display_name.c_str(), text_x, y_offset + 1);
+                        }
+                        y_offset += line_height;
                     }
 
-                    // Truncate display name if too long
-                    std::string display_name = items[i];
-                    if (hal->canvas()->textWidth(display_name.c_str(), FONT_16) >
-                        hal->canvas()->width() - 5 - scrollbar_width - 2 - 5)
+                    UTILS::UI::draw_scrollbar(hal->canvas(),
+                                              hal->canvas()->width() - scrollbar_width - 2,
+                                              y_start,
+                                              scrollbar_width,
+                                              scrollbar_height,
+                                              (int)items.size(),
+                                              max_visible_items,
+                                              scroll_offset);
+                }
+                else
+                {
+                    int sel_vis = selected_index - scroll_offset;
+                    if (sel_vis >= 0 && sel_vis < max_visible_items)
                     {
-                        display_name =
-                            display_name.substr(0, (hal->canvas()->width() - 24) / hal->canvas()->textWidth("0")) + ">";
+                        int sel_y = y_start + sel_vis * line_height + 1;
+                        bool text_fits = hal->canvas()->textWidth(items[selected_index].c_str()) <= text_area_width;
+                        if (!text_fits)
+                        {
+                            hal->canvas()->setFont(FONT_16);
+                            need_update |= SCROLL_TEXT::scroll_text_render(&item_scroll_ctx,
+                                                                           items[selected_index].c_str(),
+                                                                           text_x,
+                                                                           sel_y,
+                                                                           THEME_COLOR_SELECTED,
+                                                                           THEME_COLOR_BG_SELECTED);
+                        }
                     }
-
-                    hal->canvas()->drawString(display_name.c_str(), 10, y_offset + 1);
-                    y_offset += 16 + 2 + 1;
                 }
 
-                // Draw scrollbar if needed
-                if (items.size() > max_visible_items)
+                need_update |= hl_text_render(&hint_ctx,
+                                              "[UP] [DOWN] [<] [>] [DEL] [ESC] [ENTER]",
+                                              0,
+                                              hal->canvas()->height() - 12,
+                                              TFT_DARKGREY,
+                                              TFT_WHITE,
+                                              THEME_COLOR_BG);
+
+                if (need_update)
                 {
-                    int scrollbar_x = hal->canvas()->width() - scrollbar_width - 2;
-
-                    hal->canvas()->drawRect(scrollbar_x, y_start, scrollbar_width, scrollbar_height, TFT_DARKGREY);
-
-                    int thumb_height = scrollbar_height * max_visible_items / items.size();
-                    int thumb_pos =
-                        y_start + (scrollbar_height - thumb_height) * scroll_offset / (items.size() - max_visible_items);
-
-                    hal->canvas()->fillRect(scrollbar_x, thumb_pos, scrollbar_width, thumb_height, TFT_ORANGE);
+                    hal->canvas_update();
+                    need_update = false;
                 }
-
-                hl_text_render(&hint_ctx,
-                               "[UP] [DOWN] [<] [>] [DEL] [ESC] [ENTER]",
-                               0,
-                               hal->canvas()->height() - 12,
-                               TFT_DARKGREY,
-                               TFT_WHITE,
-                               THEME_COLOR_BG);
-
-                hal->canvas_update();
                 if (hal->home_button()->is_pressed())
                 {
                     selected_index = -1;
                     selecting = false;
                 }
-                // Handle input
                 hal->keyboard()->updateKeyList();
                 hal->keyboard()->updateKeysState();
-                // Screenshot support
                 UTILS::SCREENSHOT_TOOLS::check_and_handle_screenshot(hal, nullptr);
                 if (hal->keyboard()->isPressed())
                 {
@@ -1017,6 +1050,7 @@ namespace UTILS
                             {
                                 scroll_offset = selected_index;
                             }
+                            need_update = true;
                         }
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
@@ -1024,7 +1058,7 @@ namespace UTILS
                         if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
 
-                        if (selected_index < items.size() - 1)
+                        if (selected_index < (int)items.size() - 1)
                         {
                             hal->playNextSound();
                             selected_index++;
@@ -1032,6 +1066,7 @@ namespace UTILS
                             {
                                 scroll_offset = selected_index - max_visible_items + 1;
                             }
+                            need_update = true;
                         }
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
@@ -1045,6 +1080,7 @@ namespace UTILS
                             int jump = max_visible_items;
                             selected_index = std::max(0, selected_index - jump);
                             scroll_offset = std::max(0, selected_index - (max_visible_items - 1));
+                            need_update = true;
                         }
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
@@ -1052,12 +1088,13 @@ namespace UTILS
                         if (!key_repeat_check(is_repeat, next_fire_ts, millis()))
                             continue;
 
-                        if (selected_index < items.size() - 1)
+                        if (selected_index < (int)items.size() - 1)
                         {
                             hal->playNextSound();
                             int jump = max_visible_items;
                             selected_index = std::min((int)items.size() - 1, selected_index + jump);
                             scroll_offset = std::min(std::max(0, (int)items.size() - max_visible_items), selected_index);
+                            need_update = true;
                         }
                     }
                     else if (hal->keyboard()->isKeyPressing(KEY_NUM_ENTER))
@@ -1095,6 +1132,7 @@ namespace UTILS
                 delay(5);
             }
 
+            SCROLL_TEXT::scroll_text_free(&item_scroll_ctx);
             hl_text_free(&hint_ctx);
             return selected_index;
         }

@@ -4,6 +4,7 @@
  */
 
 #include "settings_screen.h"
+#include "draw_helper.h"
 #include "esp_log.h"
 #include "../anim/hl_text.h"
 #include "dialog.h"
@@ -70,21 +71,14 @@ namespace UTILS
                     groups_drawn++;
                 }
 
-                // Draw scrollbar if needed
-                if (groups.size() > max_visible_groups)
-                {
-                    int scrollbar_height = line_height * max_visible_groups;
-                    int scrollbar_width = 6;
-                    int scrollbar_x = hal->canvas()->width() - scrollbar_width - 1;
-
-                    hal->canvas()->drawRect(scrollbar_x, ITEMS_Y_OFFSET, scrollbar_width, scrollbar_height, TFT_DARKGREY);
-
-                    int thumb_height = scrollbar_height * max_visible_groups / groups.size();
-                    int thumb_pos = ITEMS_Y_OFFSET +
-                                    (scrollbar_height - thumb_height) * scroll_offset / (groups.size() - max_visible_groups);
-
-                    hal->canvas()->fillRect(scrollbar_x, thumb_pos, scrollbar_width, thumb_height, TFT_ORANGE);
-                }
+                UTILS::UI::draw_scrollbar(hal->canvas(),
+                                          hal->canvas()->width() - 6 - 1,
+                                          ITEMS_Y_OFFSET,
+                                          6,
+                                          line_height * max_visible_groups,
+                                          (int)groups.size(),
+                                          max_visible_groups,
+                                          scroll_offset);
 
                 need_render = false;
                 return true;
@@ -166,21 +160,14 @@ namespace UTILS
                     items_drawn++;
                 }
 
-                // Draw scrollbar if needed
-                int scrollbar_height = line_height * max_visible_lines;
-                int scrollbar_width = 6;
-                if (group.items.size() > max_visible_lines)
-                {
-                    int scrollbar_x = hal->canvas()->width() - scrollbar_width - 1;
-
-                    hal->canvas()->drawRect(scrollbar_x, ITEMS_Y_OFFSET, scrollbar_width, scrollbar_height, TFT_DARKGREY);
-
-                    int thumb_height = scrollbar_height * max_visible_lines / group.items.size();
-                    int thumb_pos = ITEMS_Y_OFFSET + (scrollbar_height - thumb_height) * scroll_offset /
-                                                         (group.items.size() - max_visible_lines);
-
-                    hal->canvas()->fillRect(scrollbar_x, thumb_pos, scrollbar_width, thumb_height, TFT_ORANGE);
-                }
+                UTILS::UI::draw_scrollbar(hal->canvas(),
+                                          hal->canvas()->width() - 6 - 1,
+                                          ITEMS_Y_OFFSET,
+                                          6,
+                                          line_height * max_visible_lines,
+                                          (int)group.items.size(),
+                                          max_visible_lines,
+                                          scroll_offset);
 
                 need_render = false;
                 return true;

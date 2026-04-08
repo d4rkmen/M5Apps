@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_partition.h"
 #include "../utils/ui/dialog.h"
+#include "../utils/ui/draw_helper.h"
 #include <algorithm>
 #include <format>
 
@@ -150,10 +151,10 @@ bool AppFdisk::_render_partition_list()
     _clear_screen();
 
     // Draw header
-    _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_ORANGE);
     _data.hal->canvas()->setFont(FONT_16);
     _data.hal->canvas()->drawString(std::format("Free: {}KB", (uint32_t)(_data.free_space / 1024)).c_str(), 5, 0);
-    _data.hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_WHITE);
     _data.hal->canvas()->drawRightString(std::format("{} / {}", _data.selected_index + 1, _data.partition_list.size()).c_str(),
                                          _data.hal->canvas()->width() - 6 - 2,
                                          0);
@@ -172,15 +173,15 @@ bool AppFdisk::_render_partition_list()
         {
             _data.hal->canvas()->fillRect(5, y_offset + 1, max_width + 25 + 5, 18, THEME_COLOR_BG_SELECTED);
             _data.hal->canvas()->pushImage(11, y_offset + 1 + 1, 16, 16, is_data ? image_data_data_sel : image_data_app_sel);
-            _data.hal->canvas()->setTextColor(TFT_BLACK, THEME_COLOR_BG_SELECTED);
+            _data.hal->canvas()->setTextColor(TFT_BLACK);
         }
         else
         {
             _data.hal->canvas()->pushImage(11, y_offset + 1 + 1, 16, 16, is_data ? image_data_data : image_data_app);
             if (is_data)
-                _data.hal->canvas()->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+                _data.hal->canvas()->setTextColor(TFT_WHITE);
             else
-                _data.hal->canvas()->setTextColor(item.is_bootable ? TFT_CYAN : TFT_WHITE, THEME_COLOR_BG);
+                _data.hal->canvas()->setTextColor(item.is_bootable ? TFT_CYAN : TFT_WHITE);
         }
         // Format display string
         std::string display_text =
@@ -214,20 +215,15 @@ bool AppFdisk::_render_control_hint(const char* hint)
 
 void AppFdisk::_render_scrollbar()
 {
-    const int screen_width = _data.hal->canvas()->width();
     const int scrollbar_width = 6;
-    const int scrollbar_x = screen_width - scrollbar_width - 2;
-    const int scrollbar_height = 19 * LIST_MAX_VISIBLE_ITEMS;
-
-    int thumb_height = scrollbar_height * LIST_MAX_VISIBLE_ITEMS / _data.partition_list.size();
-    int thumb_pos =
-        20 + (scrollbar_height - thumb_height) * _data.scroll_offset / (_data.partition_list.size() - LIST_MAX_VISIBLE_ITEMS);
-
-    // Draw scrollbar track
-    _data.hal->canvas()->drawRect(scrollbar_x, 20, scrollbar_width, scrollbar_height, TFT_DARKGREY);
-
-    // Draw scrollbar thumb
-    _data.hal->canvas()->fillRect(scrollbar_x, thumb_pos, scrollbar_width, thumb_height, TFT_ORANGE);
+    UTILS::UI::draw_scrollbar(_data.hal->canvas(),
+                              _data.hal->canvas()->width() - scrollbar_width - 2,
+                              20,
+                              scrollbar_width,
+                              19 * LIST_MAX_VISIBLE_ITEMS,
+                              (int)_data.partition_list.size(),
+                              LIST_MAX_VISIBLE_ITEMS,
+                              _data.scroll_offset);
 }
 
 void AppFdisk::_handle_list_navigation()
@@ -704,7 +700,7 @@ bool AppFdisk::_render_hex_view()
 
     // Draw header
     _data.hal->canvas()->setFont(FONT_10);
-    _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_ORANGE);
 
     // Show partition name and current offset
     std::string header = std::format("{}: {:06X}", _data.partition_list[_data.selected_index].name, _data.hex_view_offset);
@@ -726,7 +722,7 @@ bool AppFdisk::_render_hex_view()
 
         // Line address
         std::string addr = std::format("{:06X}", offset);
-        _data.hal->canvas()->setTextColor(TFT_CYAN, THEME_COLOR_BG);
+        _data.hal->canvas()->setTextColor(TFT_CYAN);
         _data.hal->canvas()->drawString(addr.c_str(), 0, y);
 
         // Highlight the current line if it's at the cursor
@@ -765,7 +761,7 @@ bool AppFdisk::_render_hex_view()
             }
         }
 
-        _data.hal->canvas()->setTextColor(hex_color, THEME_COLOR_BG);
+        _data.hal->canvas()->setTextColor(hex_color);
         _data.hal->canvas()->drawString(hex_str.c_str(), 34, y);
 
         y += 10; // Move to next line

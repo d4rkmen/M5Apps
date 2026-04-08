@@ -70,7 +70,7 @@ public:
         // Font
         _hal->canvas()->setFont(FONT_16);
         _hal->canvas()->setTextSize(1);
-        _hal->canvas()->setTextColor(THEME_COLOR_ICON, THEME_COLOR_BG);
+        _hal->canvas()->setTextColor(THEME_COLOR_ICON);
 
         // Render items
         for (const auto& item : menuItemList)

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "flood.h"
 #include "apps/utils/ui/dialog.h"
+#include "apps/utils/ui/draw_helper.h"
 #include "apps/utils/ui/key_repeat.h"
 #include "common_define.h"
 
@@ -566,7 +567,7 @@ bool AppFlood::_render_devices()
     if (_data.devices.empty())
     {
         // draw string: no files to display
-        c->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        c->setTextColor(TFT_DARKGREY);
         c->drawCenterString("<no devices found>",
                             panel_x + panel_width / 2,
                             LIST_HEADER_HEIGHT + (LIST_MAX_VISIBLE_ITEMS / 2) * (LIST_ITEM_HEIGHT + 1));
@@ -575,7 +576,7 @@ bool AppFlood::_render_devices()
     // draw sort mode indicator
     int short_x = LIST_ITEM_LEFT_PADDING;
     int short_width = 4 * 6 + 6;
-    c->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+    c->setTextColor(TFT_DARKGREY);
     int sort_mode_x = 0;
     int sort_mode_width = 0;
     switch (_data.sort_mode_index)
@@ -634,7 +635,7 @@ bool AppFlood::_render_devices()
         int node_text_color = flood_get_device_text_color(d.mac);
         std::string node_id = (d.role == MESH_ROLE_CHANNEL) ? " ch " : std::format("{:04x}", flood_get_device_id(d.mac));
         c->fillRoundRect(short_x, y_offset + 1, short_width, LIST_ITEM_HEIGHT, 4, node_color);
-        c->setTextColor(node_text_color, node_color);
+        c->setTextColor(node_text_color);
         c->drawCenterString(node_id.c_str(), short_x + short_width / 2, y_offset + 1);
         // role icon
         c->pushImage(short_x + short_width + 2,
@@ -643,8 +644,7 @@ bool AppFlood::_render_devices()
                      LIST_ICON_HEIGHT,
                      _role_icon(d.role, is_selected));
         // name
-        c->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED,
-                        is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
+        c->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED);
         c->drawString(display_name.c_str(), short_x + short_width + 2 + LIST_ICON_WIDTH + 2, y_offset + 1);
         // WiFi signal gauge (after name, before battery)
         int signal_x = short_x + short_width + 2 + LIST_ICON_WIDTH + 2 + LIST_MAX_DISPLAY_CHARS * 6 + 2;
@@ -687,8 +687,6 @@ bool AppFlood::_render_devices()
             // battery
             _draw_battery_icon(signal_x + signal_width + 2, y_offset + 1 + 4, d.battery_level, is_selected);
             // hops
-            // _data.hal->canvas()->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED,
-            //                                   is_selected ? THEME_COLOR_BG_SELECTED_DARK : THEME_COLOR_BG_DARK);
             c->drawString(std::format("{}", d.hops).c_str(), signal_x + signal_width + 2 + 16 + 2, y_offset + 1);
             c->drawRect(signal_x + signal_width + 2 + 16 + 1,
                         y_offset + 1 + 1,
@@ -697,8 +695,7 @@ bool AppFlood::_render_devices()
                         is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED);
         }
         // last seen
-        c->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED,
-                        is_selected ? THEME_COLOR_BG_SELECTED : THEME_COLOR_BG);
+        c->setTextColor(is_selected ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED);
         c->drawString(_time_ago(d.last_seen).c_str(), signal_x + signal_width + 2 + 16 + 10 + 4, y_offset + 1);
         // new messages indicator
         if (d.unread_messages)
@@ -731,20 +728,15 @@ bool AppFlood::_render_devices_scrollbar(int panel_x, int panel_width)
     {
         return false;
     }
-
-    // const int scrollbar_width = 4;
-    const int scrollbar_x = panel_x + panel_width - SCROLL_BAR_WIDTH - 1;
-    const int scrollbar_height = (LIST_ITEM_HEIGHT + 1) * LIST_MAX_VISIBLE_ITEMS;
-
-    int thumb_height = std::max(SCROLLBAR_MIN_HEIGHT, (scrollbar_height * LIST_MAX_VISIBLE_ITEMS) / (int)_data.devices.size());
-    int thumb_pos = LIST_HEADER_HEIGHT +
-                    (scrollbar_height - thumb_height) * _data.scroll_offset / (_data.devices.size() - LIST_MAX_VISIBLE_ITEMS);
-
-    // Draw scrollbar track
-    auto c = _data.hal->canvas();
-    c->drawRect(scrollbar_x, LIST_HEADER_HEIGHT, SCROLL_BAR_WIDTH, scrollbar_height, TFT_DARKGREY);
-    // Draw scrollbar thumb
-    c->fillRect(scrollbar_x, thumb_pos, SCROLL_BAR_WIDTH, thumb_height, TFT_ORANGE);
+    UTILS::UI::draw_scrollbar(_data.hal->canvas(),
+                              panel_x + panel_width - SCROLL_BAR_WIDTH - 1,
+                              LIST_HEADER_HEIGHT,
+                              SCROLL_BAR_WIDTH,
+                              (LIST_ITEM_HEIGHT + 1) * LIST_MAX_VISIBLE_ITEMS,
+                              (int)_data.devices.size(),
+                              LIST_MAX_VISIBLE_ITEMS,
+                              _data.scroll_offset,
+                              SCROLLBAR_MIN_HEIGHT);
     return true;
 }
 
@@ -766,9 +758,8 @@ bool AppFlood::_render_chat()
     {
         title = title.substr(0, 15) + ">";
     }
-    // c->setTextColor(THEME_COLOR_SELECTED, THEME_COLOR_BG_SELECTED);
     c->pushImage(2, 0, LIST_ICON_WIDTH, LIST_ICON_HEIGHT, _role_icon(_data.chat_role, false));
-    c->setTextColor(TFT_SKYBLUE, THEME_COLOR_BG);
+    c->setTextColor(TFT_SKYBLUE);
     c->drawString(title.c_str(), 2 + LIST_ICON_WIDTH + 2, 0);
     c->drawFastHLine(0, CHAT_HEADER_HEIGHT - 1, c->width() - 1, THEME_COLOR_BG_SELECTED);
     int x_offset = 2;
@@ -791,7 +782,7 @@ bool AppFlood::_render_chat()
     // error case
     if (_data.chat_messages.empty())
     {
-        c->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        c->setTextColor(TFT_DARKGREY);
         c->drawCenterString(_data.chat_info.c_str(), c->width() / 2, c->height() / 2);
         return true;
     }
@@ -831,13 +822,13 @@ bool AppFlood::_render_chat()
                 break;
 
             // Draw message text line
-            c->setTextColor(TFT_WHITE, THEME_COLOR_BG);
+            c->setTextColor(TFT_WHITE);
             c->drawString(lines[line_idx].c_str(), text_start_x, y);
             // Draw sender ID only on first line of message
             if (line_idx == 0)
             {
                 c->fillRoundRect(2, y, node_id_width, CHAT_ITEM_HEIGHT, 3, sender_color);
-                c->setTextColor(sender_text_color, sender_color);
+                c->setTextColor(sender_text_color);
                 std::string sender_id = std::format("{:04x}", device_id);
                 c->drawString(sender_id.c_str(), 2 + 3, y);
                 // draw status DELIVERED

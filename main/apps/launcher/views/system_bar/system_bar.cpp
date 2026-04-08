@@ -83,7 +83,7 @@ void Launcher::_update_system_bar()
             int short_width = 4 * 6 + 6;
             _data.hal->canvas_system_bar()->fillRoundRect(x, y + 1, short_width, 14, 4, node_color);
             _data.hal->canvas_system_bar()->setFont(FONT_12);
-            _data.hal->canvas_system_bar()->setTextColor(node_text_color, node_color);
+            _data.hal->canvas_system_bar()->setTextColor(node_text_color);
             _data.hal->canvas_system_bar()->drawCenterString(item_id.c_str(), x + short_width / 2, y + 1);
             x += short_width + PADDING_X;
         }

@@ -29,10 +29,10 @@ void Launcher::_boot_anim()
     const int32_t pos_x = _data.hal->display()->width() - 4;
     const int32_t pos_y = _data.hal->display()->height() / 2;
     _data.hal->display()->setFont(FONT_12);
-    _data.hal->display()->setTextColor(TFT_DARKGREY, TFT_BLACK);
+    _data.hal->display()->setTextColor(TFT_DARKGREY);
     _data.hal->display()->drawRightString(_data.hal->type().c_str(), pos_x, pos_y);
     _data.hal->display()->setFont(FONT_16);
-    _data.hal->display()->setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    _data.hal->display()->setTextColor(TFT_LIGHTGREY);
     _data.hal->display()->drawRightString("M5Apps v" BUILD_NUMBER, pos_x, pos_y + 14);
     // turn on the screen
     _data.hal->display()->setBrightness(_data.hal->settings()->getNumber("system", "brightness"));

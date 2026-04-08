@@ -17,6 +17,7 @@
 #include <memory>
 #include <cstdio>
 #include "apps/utils/ui/dialog.h"
+#include "apps/utils/ui/draw_helper.h"
 #include "apps/utils/ui/key_repeat.h"
 #include "apps/utils/flash/ptable_tools.h"
 
@@ -91,7 +92,7 @@ void AppFinder::onResume()
 
     _data.hal->canvas()->fillScreen(THEME_COLOR_BG);
     _data.hal->canvas()->setFont(FONT_12);
-    _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_ORANGE);
     _data.hal->canvas()->setTextSize(1);
     _data.hal->canvas_update();
 
@@ -405,7 +406,7 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
     if (!panel.initialized || panel.file_list.empty())
     {
         // draw string: no files to display
-        _data.hal->canvas()->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        _data.hal->canvas()->setTextColor(TFT_DARKGREY);
         _data.hal->canvas()->drawCenterString("No data",
                                               panel_x + panel_width / 2,
                                               12 + (LIST_MAX_VISIBLE_ITEMS / 2) * (14 + 1));
@@ -439,13 +440,13 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
                                            14,
                                            14,
                                            is_dir ? image_data_folder_sel14 : image_data_file_sel14);
-            _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED, THEME_COLOR_BG_SELECTED);
+            _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
             _data.hal->canvas()->drawString(display_name.c_str(), panel_x + 20, y_offset + 1);
         }
         else
         {
             _data.hal->canvas()->pushImage(panel_x + 6, y_offset + 1, 14, 14, is_dir ? image_data_folder14 : image_data_file14);
-            _data.hal->canvas()->setTextColor(is_dir ? TFT_GREENYELLOW : TFT_WHITE, THEME_COLOR_BG);
+            _data.hal->canvas()->setTextColor(is_dir ? TFT_GREENYELLOW : TFT_WHITE);
             _data.hal->canvas()->drawString(display_name.c_str(), panel_x + 20, y_offset + 1);
         }
 
@@ -490,8 +491,7 @@ bool AppFinder::_render_panel_file_list(PanelData_t& panel, int panel_x, int pan
         // _data.hal->canvas()->fillRect(panel_x, info_y, panel_width, 12, THEME_COLOR_BG_SELECTED);
 
         // Draw info text
-        // _data.hal->canvas()->setTextColor(TFT_BLACK, THEME_COLOR_BG_SELECTED);
-        _data.hal->canvas()->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
+        _data.hal->canvas()->setTextColor(TFT_DARKGREY);
         _data.hal->canvas()->drawString(info_text.c_str(), panel_x + 2, info_y);
     }
 
@@ -505,20 +505,15 @@ bool AppFinder::_render_panel_scrollbar(PanelData_t& panel, int panel_x, int pan
     {
         return false;
     }
-
     const int scrollbar_width = 4;
-    const int scrollbar_x = panel_x + panel_width - scrollbar_width - 1;
-    const int scrollbar_height = (14 + 1) * LIST_MAX_VISIBLE_ITEMS;
-
-    int thumb_height = scrollbar_height * LIST_MAX_VISIBLE_ITEMS / panel.file_list.size();
-    int thumb_pos =
-        12 + (scrollbar_height - thumb_height) * panel.scroll_offset / (panel.file_list.size() - LIST_MAX_VISIBLE_ITEMS);
-
-    // Draw scrollbar track
-    _data.hal->canvas()->drawRect(scrollbar_x, 12, scrollbar_width, scrollbar_height, TFT_DARKGREY);
-
-    // Draw scrollbar thumb
-    _data.hal->canvas()->fillRect(scrollbar_x, thumb_pos, scrollbar_width, thumb_height, TFT_ORANGE);
+    UTILS::UI::draw_scrollbar(_data.hal->canvas(),
+                              panel_x + panel_width - scrollbar_width - 1,
+                              12,
+                              scrollbar_width,
+                              (14 + 1) * LIST_MAX_VISIBLE_ITEMS,
+                              (int)panel.file_list.size(),
+                              LIST_MAX_VISIBLE_ITEMS,
+                              panel.scroll_offset);
     return true;
 }
 

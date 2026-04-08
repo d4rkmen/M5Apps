@@ -30,7 +30,7 @@ void AppSettings::onResume()
     ANIM_APP_OPEN();
     _data.hal->canvas()->fillScreen(THEME_COLOR_BG);
     _data.hal->canvas()->setFont(FONT_16);
-    _data.hal->canvas()->setTextColor(TFT_ORANGE, THEME_COLOR_BG);
+    _data.hal->canvas()->setTextColor(TFT_ORANGE);
     _data.hal->canvas()->setTextSize(1);
     _data.hal->canvas_update();
 
