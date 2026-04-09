@@ -17,7 +17,7 @@ idf_component_register(SRCS "main.cpp" ${APPS_SRCS} ${HAL_SRCS} ${SETTINGS_SRCS}
                     INCLUDE_DIRS "." "hal"
                     REQUIRES LovyanGFX mooncake spi_flash bootloader_support app_update usb usb_host_msc fatfs esp_wifi esp_http_client mjson flood esp_adc driver
                     WHOLE_ARCHIVE
-                    EMBED_FILES sound/usb_connected.wav sound/usb_disconnected.wav sound/error.wav sound/boot_sound.wav sound/clock.wav image/boot_logo.png
+                    EMBED_FILES sound/usb_connected.wav sound/usb_disconnected.wav sound/error.wav sound/boot_sound.wav sound/clock.wav image/boot_logo.png apps/launcher/views/system_bar/assets/time.png
                     )
                     
 

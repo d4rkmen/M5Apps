@@ -10,9 +10,22 @@
 #include "lwip/sys.h"
 #include "lwip/dns.h"
 #include "lwip/ip4_addr.h"
+#include "esp_netif_sntp.h"
 #include <cstdlib>
+#include <ctime>
 
 static const char* TAG = "WIFI";
+static bool s_sntp_initialized = false;
+
+static void sntp_sync_cb(struct timeval* tv)
+{
+    time_t now = tv->tv_sec;
+    struct tm ti;
+    localtime_r(&now, &ti);
+    ESP_LOGI(TAG, "SNTP synced: %04d-%02d-%02d %02d:%02d:%02d",
+             ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday,
+             ti.tm_hour, ti.tm_min, ti.tm_sec);
+}
 
 namespace HAL
 {
@@ -123,10 +136,18 @@ namespace HAL
             {
                 ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
                 ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
-                // set IP, mask and gateway to settings
                 s_wifi_instance->_settings->setString("wifi", "ip", ip4addr_ntoa((ip4_addr_t*)&event->ip_info.ip));
                 s_wifi_instance->_settings->setString("wifi", "mask", ip4addr_ntoa((ip4_addr_t*)&event->ip_info.netmask));
                 s_wifi_instance->_settings->setString("wifi", "gateway", ip4addr_ntoa((ip4_addr_t*)&event->ip_info.gw));
+
+                if (!s_sntp_initialized)
+                {
+                    esp_sntp_config_t sntp_cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+                    sntp_cfg.sync_cb = sntp_sync_cb;
+                    esp_netif_sntp_init(&sntp_cfg);
+                    s_sntp_initialized = true;
+                    ESP_LOGI(TAG, "SNTP time sync started");
+                }
             }
         }
     }
@@ -267,7 +288,13 @@ namespace HAL
             return;
 
         disconnect();
-        // Disable promiscuous mode if enabled
+
+        if (s_sntp_initialized)
+        {
+            esp_netif_sntp_deinit();
+            s_sntp_initialized = false;
+        }
+
         esp_wifi_set_promiscuous(false);
         esp_wifi_set_promiscuous_rx_cb(nullptr);
 

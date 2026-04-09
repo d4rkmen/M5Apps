@@ -24,6 +24,7 @@
 #include "settings/settings.h"
 #include <iostream>
 #include <string>
+#include <ctime>
 
 namespace HAL
 {
@@ -81,7 +82,7 @@ namespace HAL
         inline ES8311* es8311() { return _es8311; }
 
         inline void setSntpAdjusted(bool isAdjusted) { _sntp_adjusted = isAdjusted; }
-        inline bool isSntpAdjusted(void) { return _sntp_adjusted; }
+        inline bool isSntpAdjusted(void) { return _sntp_adjusted || time(nullptr) > 1704067200; }
         inline BoardType board_type() const { return _board_type; }
 
         // Canvas

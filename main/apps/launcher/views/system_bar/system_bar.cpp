@@ -22,6 +22,9 @@
 #include "assets/usb1.h"
 #include "flood.h"
 
+extern const uint8_t time_icon_start[] asm("_binary_time_png_start");
+extern const uint8_t time_icon_end[] asm("_binary_time_png_end");
+
 using namespace MOONCAKE::APPS;
 
 #define PADDING_X 4
@@ -130,11 +133,17 @@ void Launcher::_update_system_bar()
         bool show_time = _data.hal->settings()->getBool("system", "show_time");
         if (show_time)
         {
+            int time_cx = _data.hal->canvas_system_bar()->width() / 2 - 8;
+            int time_cy = _data.hal->canvas_system_bar()->height() / 2 - FONT_HEIGHT / 2 - 1;
+            if (_data.hal->isSntpAdjusted())
+            {
+                _data.hal->canvas_system_bar()->drawPng(time_icon_start,
+                                                        time_icon_end - time_icon_start,
+                                                        time_cx - 34,
+                                                        time_cy + 3);
+            }
             _data.hal->canvas_system_bar()->setTextColor(THEME_COLOR_SYSTEM_BAR_TEXT);
-            _data.hal->canvas_system_bar()->drawCenterString(_data.system_state.time.c_str(),
-                                                             _data.hal->canvas_system_bar()->width() / 2 - 8,
-                                                             _data.hal->canvas_system_bar()->height() / 2 - FONT_HEIGHT / 2 -
-                                                                 1);
+            _data.hal->canvas_system_bar()->drawCenterString(_data.system_state.time.c_str(), time_cx, time_cy);
         }
         // Battery area
         x = _data.hal->canvas_system_bar()->width() - 45;

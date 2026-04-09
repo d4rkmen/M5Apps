@@ -145,6 +145,12 @@ namespace SETTINGS
          */
         bool importFromFile(const std::string& filename);
 
+        /**
+         * @brief
+         * @param tz The timezone to apply
+         */
+        static void applyTimezone(const std::string& tz);
+
     private:
         static const char* NVS_PARTITION;
 

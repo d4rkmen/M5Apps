@@ -78,6 +78,11 @@ extern "C" void app_main(void)
     // Connect settings to HAL for callbacks
     settings.setHal(&hal);
 
+    // Apply timezone from settings
+    std::string tz = settings.getString("system", "timezone");
+    if (!tz.empty())
+        Settings::applyTimezone(tz);
+
     // Init framework
     mooncake.setDatabaseSetupCallback(_data_base_setup_callback);
     mooncake.init();
