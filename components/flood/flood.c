@@ -145,6 +145,7 @@ static int32_t flood_save_message_internal(const uint8_t* mac,
 static esp_err_t flood_update_private_message_status_internal(const uint8_t* mac, uint32_t message_id, uint8_t status);
 static esp_err_t flood_waiting_ack_add(const uint8_t* packet, uint16_t packet_length);
 static esp_err_t flood_waiting_ack_remove(uint32_t sequence, const uint8_t* dest_mac, int32_t* out_message_id);
+static esp_err_t flood_waiting_ack_implicit(uint32_t sequence);
 static void flood_waiting_ack_check_timeouts(void);
 static void flood_waiting_ack_cleanup(void);
 static esp_err_t get_channels_path(char* path);
@@ -687,12 +688,7 @@ static esp_err_t flood_process_hello_packet(const uint8_t* data, uint16_t length
     {
         s_message_callback(header, data, length, rssi, s_message_callback_user_data);
     }
-    // check ACK required
-    if (header->flags & MESH_FLAG_ACK_REQUIRED)
-    {
-        flood_send_ack(header->source_mac, header->sequence, MESH_ACK_STATUS_SUCCESS);
-    }
-    // forward hello packet always
+    // forward hello packet always (implicit ACK via overheard retransmission)
     flood_forward_packet(data, length);
     return ESP_OK;
 }
@@ -772,12 +768,7 @@ static esp_err_t flood_process_message_packet(const uint8_t* data, uint16_t leng
             s_message_callback(header, data, length, rssi, s_message_callback_user_data);
         }
     }
-    // check ACK required
-    if (header->flags & MESH_FLAG_ACK_REQUIRED)
-    {
-        flood_send_ack(src_mac, header->sequence, MESH_ACK_STATUS_SUCCESS);
-    }
-    // forward message packet always
+    // forward message packet always (implicit ACK via overheard retransmission)
     flood_forward_packet(data, length);
     return ESP_OK;
 }
@@ -791,17 +782,18 @@ static esp_err_t flood_process_private_packet(const uint8_t* data, uint16_t leng
         return ESP_ERR_INVALID_STATE;
     }
 
-    // check ACK required
-    if (header->flags & MESH_FLAG_ACK_REQUIRED)
-    {
-        flood_send_ack(header->source_mac, header->sequence, MESH_ACK_STATUS_SUCCESS);
-    }
     if (!flood_is_our_mac(header->dest_mac))
     {
+        // Relay node: forward only, no explicit ACK (implicit ACK via retransmission)
         flood_forward_packet(data, length);
     }
     else
     {
+        // Destination node: send explicit ACK back to sender
+        if (header->flags & MESH_FLAG_ACK_REQUIRED)
+        {
+            flood_send_ack(header->source_mac, header->sequence, MESH_ACK_STATUS_SUCCESS);
+        }
         if (length >= sizeof(mesh_private_packet_t))
         {
             // find device by mac
@@ -910,7 +902,13 @@ static esp_err_t flood_process_packet(const uint8_t* data, uint16_t length, cons
     // check source is not our mac
     if (flood_is_our_mac(header->source_mac))
     {
-        ESP_LOGD(TAG, "Retransmitted packet from our mac, dropping");
+        if (header->flags & MESH_FLAG_FORWARDED)
+        {
+            if (flood_waiting_ack_implicit(header->sequence) == ESP_OK)
+            {
+                ESP_LOGI(TAG, "Implicit ACK for *%08x (overheard retransmission)", header->sequence);
+            }
+        }
         return ESP_OK;
     }
 
@@ -1959,7 +1957,7 @@ esp_err_t flood_send_hello(void)
     header->version = MESH_PROTOCOL_VERSION;
     header->type = MESH_PACKET_TYPE_HELLO;
     header->hops = 0;
-    header->flags = MESH_FLAG_ACK_REQUIRED;
+    header->flags = 0;
     header->ttl = s_max_ttl;
     // header->length = sizeof(mesh_hello_packet_t) - sizeof(mesh_packet_header_t);
     header->sequence = s_sequence_number++;
@@ -3517,6 +3515,73 @@ static esp_err_t flood_waiting_ack_remove(uint32_t sequence, const uint8_t* dest
             s_waiting_ack_count--;
 
             ESP_LOGD(TAG, "Removed message *%08x from waiting ACK list (remaining: %lu)", sequence, s_waiting_ack_count);
+
+            xSemaphoreGive(s_flood_mutex);
+            return ESP_OK;
+        }
+
+        prev = current;
+        current = current->next;
+    }
+
+    xSemaphoreGive(s_flood_mutex);
+    return ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t flood_waiting_ack_implicit(uint32_t sequence)
+{
+    if (xSemaphoreTake(s_flood_mutex, pdMS_TO_TICKS(100)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    waiting_ack_node_t* current = s_waiting_ack_head;
+    waiting_ack_node_t* prev = NULL;
+
+    while (current != NULL)
+    {
+        const mesh_packet_header_t* header = (const mesh_packet_header_t*)current->packet;
+        if (header->sequence == sequence)
+        {
+            int32_t message_id = -1;
+            if (header->type == MESH_PACKET_TYPE_MESSAGE)
+            {
+                mesh_message_packet_t* msg = (mesh_message_packet_t*)current->packet;
+                message_id = msg->message_id;
+                if (message_id >= 0)
+                {
+                    flood_update_channel_message_status_internal(
+                        (char*)msg->channel_name, message_id, MESSAGE_STATUS_DELIVERED);
+                }
+            }
+            else if (header->type == MESH_PACKET_TYPE_PRIVATE)
+            {
+                mesh_private_packet_t* priv = (mesh_private_packet_t*)current->packet;
+                message_id = priv->message_id;
+                if (message_id >= 0)
+                {
+                    flood_update_private_message_status_internal(
+                        header->dest_mac, message_id, MESSAGE_STATUS_DELIVERED);
+                }
+            }
+
+            if (prev == NULL)
+            {
+                s_waiting_ack_head = current->next;
+            }
+            else
+            {
+                prev->next = current->next;
+            }
+
+            free(current);
+            s_waiting_ack_count--;
+
+            if (s_message_status_callback != NULL)
+            {
+                s_message_status_callback(
+                    header->dest_mac, message_id, MESSAGE_STATUS_DELIVERED, s_message_status_callback_user_data);
+            }
 
             xSemaphoreGive(s_flood_mutex);
             return ESP_OK;
