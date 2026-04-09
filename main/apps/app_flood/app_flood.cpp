@@ -288,6 +288,12 @@ void AppFlood::onRunning()
 
 void AppFlood::onDestroy()
 {
+    flood_register_message_callback(NULL, NULL);
+    flood_register_device_callback(NULL, NULL);
+    flood_register_sent_packet_callback(NULL, NULL);
+    flood_register_received_packet_callback(NULL, NULL);
+    flood_register_message_status_callback(NULL, NULL);
+    flood_stop();
     scroll_text_free(&_data.name_scroll_ctx);
     hl_text_free(&_data.hint_hl_ctx);
     flood_deinit();
@@ -523,7 +529,7 @@ static const uint16_t* _role_icon(FLOOD_DEVICE_ROLE_t role, bool selected)
 
 bool AppFlood::_render_scrolling_name()
 {
-    if (_data.devices.empty())
+    if (_data.devices.empty() || _data.selected_index >= (int)_data.devices.size())
     {
         return false;
     }
@@ -561,12 +567,12 @@ bool AppFlood::_render_devices()
 
     if (_data.devices.empty())
     {
-        // draw string: no files to display
         c->setTextColor(TFT_DARKGREY);
         c->drawCenterString("<no devices found>",
                             panel_x + panel_width / 2,
                             LIST_HEADER_HEIGHT + (LIST_MAX_VISIBLE_ITEMS / 2) * (LIST_ITEM_HEIGHT + 1));
-        return false;
+        _data.need_render = false;
+        return true;
     }
     // draw sort mode indicator
     int short_x = LIST_ITEM_LEFT_PADDING;
@@ -1435,13 +1441,14 @@ bool AppFlood::_chat_load_messages(int index)
 
 bool AppFlood::_chat_load_next()
 {
-
-    if ((_data.chat_role == MESH_ROLE_CHANNEL) ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
-                                               : flood_get_message_count(_data.chat_mac, &_data.total_messages) != ESP_OK)
+    if ((_data.chat_role == MESH_ROLE_CHANNEL
+             ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
+             : flood_get_message_count(_data.chat_mac, &_data.total_messages)) != ESP_OK)
     {
         return false;
     }
-    if (_data.cur_index >= _data.total_messages - CHAT_MAX_VISIBLE_ITEMS)
+    if (_data.total_messages <= CHAT_MAX_VISIBLE_ITEMS ||
+        _data.cur_index >= (int)(_data.total_messages - CHAT_MAX_VISIBLE_ITEMS))
     {
         return false;
     }
@@ -1543,8 +1550,9 @@ bool AppFlood::_chat_load_prev()
     _data.tot_lines -= lines_removed;
     _data.tot_lines += lines_count;
     _data.need_render = true;
-    if ((_data.chat_role == MESH_ROLE_CHANNEL) ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
-                                               : flood_get_message_count(_data.chat_mac, &_data.total_messages) != ESP_OK)
+    if ((_data.chat_role == MESH_ROLE_CHANNEL
+             ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
+             : flood_get_message_count(_data.chat_mac, &_data.total_messages)) != ESP_OK)
     {
         return false;
     }
