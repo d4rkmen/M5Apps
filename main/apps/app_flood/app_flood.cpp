@@ -239,11 +239,6 @@ void AppFlood::onRunning()
         return;
     }
 
-    // check dimmed
-    if (_data.hal->keyboard()->isDimmed())
-    {
-        return;
-    }
     // periodic render
     uint32_t now = millis();
     if ((uint32_t)(now - _data.last_render_tick) >= APP_RENDER_INTERVAL_MS)
