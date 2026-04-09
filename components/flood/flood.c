@@ -1043,6 +1043,19 @@ static esp_err_t flood_process_packet(const uint8_t* data, uint16_t length, cons
              header->sequence,
              MAC2STR(header->source_mac),
              rssi);
+
+    // Update last_seen for known source device on every received packet
+    if (!flood_is_our_mac(header->source_mac))
+    {
+        mesh_device_info_t src_device = {0};
+        if (flood_find_device(header->source_mac, &src_device) == ESP_OK)
+        {
+            src_device.volatile_data.last_seen = flood_get_timestamp();
+            src_device.volatile_data.signal_strength = flood_rssi_to_percentage(rssi);
+            src_device.volatile_data.hops = header->hops;
+            flood_update_device_volatile(header->source_mac, &src_device.volatile_data);
+        }
+    }
     // call received packet callback
     if (s_received_packet_callback != NULL)
     {
