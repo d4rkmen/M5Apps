@@ -1,5 +1,22 @@
 Install with M5Burner!
 
+v2.4
+
+- HAL: ES8311 audio codec driver for CardPuter ADV
+- HAL: Keyboard driver race condition fixed
+- HAL: Screen dimming with configurable timeout
+- UI: Battery widget redesigned with dynamic fill and voltage/level display
+- UI: Unified scrollbar rendering across all apps
+- UI: Key repeat helper reduces code duplication in input handlers
+- UI: Long value scroll animation in selection dialogs
+- INSTALLER: Zero-allocation JSON parsing (mjson) saves heap during cloud browsing
+- INSTALLER: Lazy rendering for cloud lists with O(1) offset index (fast scrolling 200+ items)
+- INSTALLER: Save downloaded firmware to SD card/USB (configurable dl_path setting)
+- INSTALLER: Unicode escape handling fixed for non-ASCII app names
+- INSTALLER & FINDER: DirList compact directory scanner prevents OOM with 1000+ files
+- SETTINGS: Callback-based settings for Wi-Fi, brightness, volume, dimming
+- SETTINGS: Import/export refactored with group-level callbacks
+
 v2.3
 
 - exFAT filesystem support added for SD card and USB drive. Now can use huge volumes media (not limited by 32Gb)
