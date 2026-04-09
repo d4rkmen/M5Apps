@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include <algorithm>
+#include <ctime>
 #include "flood.h"
 #include "apps/utils/ui/dialog.h"
 #include "apps/utils/ui/draw_helper.h"
@@ -29,10 +30,12 @@ using namespace MOONCAKE::APPS;
 static const char* TAG = "APP_FLOOD";
 static const char* FLOOD_CONTEXT_PATH = "/sdcard/flood";
 
-static const char* HINT_DEVICES = "[Fn] [^][v] [<][>] [C][S] [ENTER][DEL] [ESC]";
+static const char* HINT_DEVICES = "[Fn] [^][v] [<][>] [C][S][T] [ENTER][DEL] [ESC]";
 static const char* HINT_DEVICES_FN = "[UP] [DOWN]";
 static const char* HINT_CHAT = "[Fn] [^][v] [<][>] [ENTER][DEL] [ESC]";
 static const char* HINT_CHAT_FN = "[UP] [DOWN] [<] [>]";
+static const char* HINT_TRACE = "[^][v] [<][>] [ENTER] [T]RACE [ESC]";
+static const char* HINT_TRACE_DETAIL = "[^][v] [<][>] [ESC]";
 
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
@@ -107,9 +110,16 @@ static void _received_packet_callback(const uint8_t* data, uint16_t length, void
     AppFlood* app = static_cast<AppFlood*>(user_data);
     if (app)
     {
-        // app->needRefresh();
-        // blick with green blue
         app->ledBlueBlink();
+    }
+}
+
+static void _trace_callback(const flood_trace_result_t* result, void* user_data)
+{
+    AppFlood* app = static_cast<AppFlood*>(user_data);
+    if (app && result)
+    {
+        app->onTraceResult(result);
     }
 }
 
@@ -174,6 +184,7 @@ void AppFlood::onCreate()
         flood_register_sent_packet_callback(_sent_packet_callback, this);
         flood_register_received_packet_callback(_received_packet_callback, this);
         flood_register_message_status_callback(_message_status_callback, this);
+        flood_register_trace_callback(_trace_callback, this);
         if (flood_start() != ESP_OK)
         {
             UTILS::UI::show_error_dialog(_data.hal, "Init failed", "Can't create task");
@@ -268,6 +279,19 @@ void AppFlood::onRunning()
         updated |= _render_chat();
         updated |= _render_chat_hint();
         break;
+    case view_traceroute:
+        if (_data.trace_result_ready)
+        {
+            _trace_process_staged_result();
+        }
+        _trace_check_timeouts();
+        updated |= _render_traceroute();
+        updated |= _render_traceroute_hint();
+        break;
+    case view_traceroute_detail:
+        updated |= _render_traceroute_detail();
+        updated |= _render_traceroute_detail_hint();
+        break;
     }
 
     if (updated)
@@ -283,6 +307,12 @@ void AppFlood::onRunning()
     case view_chat:
         _handle_chat_navigation();
         break;
+    case view_traceroute:
+        _handle_traceroute_navigation();
+        break;
+    case view_traceroute_detail:
+        _handle_traceroute_detail_navigation();
+        break;
     }
 }
 
@@ -293,6 +323,7 @@ void AppFlood::onDestroy()
     flood_register_sent_packet_callback(NULL, NULL);
     flood_register_received_packet_callback(NULL, NULL);
     flood_register_message_status_callback(NULL, NULL);
+    flood_register_trace_callback(NULL, NULL);
     flood_stop();
     scroll_text_free(&_data.name_scroll_ctx);
     hl_text_free(&_data.hint_hl_ctx);
@@ -497,6 +528,37 @@ std::string AppFlood::_time_ago(uint32_t last_seen_ms)
     {
         return std::format("{:>2}y", (uint32_t)(sec / 31536000));
     }
+}
+
+std::string AppFlood::_format_timestamp(uint32_t timestamp)
+{
+    if (timestamp == 0)
+        return "---";
+
+    struct tm ti;
+    time_t ts = (time_t)timestamp;
+    localtime_r(&ts, &ti);
+
+    time_t now = time(nullptr);
+    struct tm now_tm;
+    localtime_r(&now, &now_tm);
+
+    std::string hm = std::format("{:02d}:{:02d}", ti.tm_hour, ti.tm_min);
+
+    if (ti.tm_year == now_tm.tm_year && ti.tm_yday == now_tm.tm_yday)
+        return hm;
+
+    int days_ago = (now_tm.tm_year - ti.tm_year) * 365 + now_tm.tm_yday - ti.tm_yday;
+    if (days_ago > 0 && days_ago < 7)
+    {
+        static constexpr const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+        return std::format("{} {}", days[ti.tm_wday], hm);
+    }
+
+    if (ti.tm_year == now_tm.tm_year)
+        return std::format("{:02d}.{:02d} {}", ti.tm_mday, ti.tm_mon + 1, hm);
+
+    return std::format("{:02d}.{:02d}.{:04d} {}", ti.tm_mday, ti.tm_mon + 1, ti.tm_year + 1900, hm);
 }
 
 void AppFlood::_draw_battery_icon(int x, int y, uint8_t level, bool selected)
@@ -1230,6 +1292,26 @@ bool AppFlood::_handle_devices_navigation()
                 changed = true;
             }
         }
+        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_T))
+        {
+            _data.hal->playNextSound();
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_T);
+            if (_data.selected_index >= 0 && _data.selected_index < (int)_data.devices.size())
+            {
+                const auto& d = _data.devices[_data.selected_index];
+                if (d.role != MESH_ROLE_CHANNEL)
+                {
+                    memcpy(_data.trace_target_mac, d.mac, 6);
+                    _data.trace_target_name = d.name;
+                    _trace_load_from_file();
+                    _data.trace_selected_index = std::max(0, _data.trace_count - 1);
+                    _data.trace_scroll_offset = std::max(0, _data.trace_selected_index - TRACE_LIST_MAX_VISIBLE + 1);
+                    _data.current_view = view_traceroute;
+                    _data.need_render = true;
+                    return true;
+                }
+            }
+        }
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER))
         {
             _data.hal->playNextSound();
@@ -1441,9 +1523,8 @@ bool AppFlood::_chat_load_messages(int index)
 
 bool AppFlood::_chat_load_next()
 {
-    if ((_data.chat_role == MESH_ROLE_CHANNEL
-             ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
-             : flood_get_message_count(_data.chat_mac, &_data.total_messages)) != ESP_OK)
+    if ((_data.chat_role == MESH_ROLE_CHANNEL ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
+                                              : flood_get_message_count(_data.chat_mac, &_data.total_messages)) != ESP_OK)
     {
         return false;
     }
@@ -1550,9 +1631,8 @@ bool AppFlood::_chat_load_prev()
     _data.tot_lines -= lines_removed;
     _data.tot_lines += lines_count;
     _data.need_render = true;
-    if ((_data.chat_role == MESH_ROLE_CHANNEL
-             ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
-             : flood_get_message_count(_data.chat_mac, &_data.total_messages)) != ESP_OK)
+    if ((_data.chat_role == MESH_ROLE_CHANNEL ? flood_get_channel_message_count(_data.chat_with.c_str(), &_data.total_messages)
+                                              : flood_get_message_count(_data.chat_mac, &_data.total_messages)) != ESP_OK)
     {
         return false;
     }
@@ -1621,4 +1701,583 @@ void AppFlood::goLastMessage()
     {
         _chat_load_messages(-1);
     }
+}
+
+// ============================================================================
+// Traceroute
+// ============================================================================
+
+void AppFlood::onTraceResult(const flood_trace_result_t* result)
+{
+    memcpy(&_data.trace_staged, result, sizeof(flood_trace_result_t));
+    _data.trace_result_ready = true;
+    _data.need_render = true;
+}
+
+std::string AppFlood::_mac_short_label(const uint8_t* mac) { return std::format("{:02X}{:02X}", mac[4], mac[5]); }
+
+void AppFlood::_trace_load_from_file()
+{
+    _data.trace_results.resize(FLOOD_TRACE_MAX_RECORDS);
+    uint32_t loaded = 0;
+    flood_trace_load_all(_data.trace_target_mac, _data.trace_results.data(), &loaded);
+    _data.trace_count = (int)loaded;
+    _data.trace_results.resize(loaded);
+}
+
+void AppFlood::_trace_process_staged_result()
+{
+    _data.trace_result_ready = false;
+    uint32_t tid = _data.trace_staged.trace_id;
+    for (int i = 0; i < _data.trace_count; i++)
+    {
+        auto& tr = _data.trace_results[i];
+        if (tr.trace_id == tid && tr.status == FLOOD_TRACE_STATUS_PENDING)
+        {
+            tr.status = FLOOD_TRACE_STATUS_SUCCESS;
+            tr.elapsed_ms = millis() - tr.timestamp;
+            tr.route_to_count = _data.trace_staged.route_to_count;
+            tr.route_back_count = _data.trace_staged.route_back_count;
+            memcpy(tr.route_to, _data.trace_staged.route_to, tr.route_to_count * sizeof(flood_trace_hop_t));
+            memcpy(tr.route_back, _data.trace_staged.route_back, tr.route_back_count * sizeof(flood_trace_hop_t));
+            flood_trace_update(_data.trace_target_mac, tid, &tr);
+            _data.need_render = true;
+            return;
+        }
+    }
+}
+
+void AppFlood::_trace_check_timeouts()
+{
+    uint32_t now = millis();
+    bool changed = false;
+    for (int i = 0; i < _data.trace_count; i++)
+    {
+        auto& tr = _data.trace_results[i];
+        if (tr.status == FLOOD_TRACE_STATUS_PENDING && (now - tr.timestamp) >= FLOOD_TRACE_TIMEOUT_MS)
+        {
+            tr.status = FLOOD_TRACE_STATUS_FAILED;
+            tr.elapsed_ms = now - tr.timestamp;
+            flood_trace_update(_data.trace_target_mac, tr.trace_id, &tr);
+            changed = true;
+        }
+    }
+    if (changed)
+    {
+        _data.need_render = true;
+    }
+}
+
+void AppFlood::_trace_send_request()
+{
+    uint32_t trace_id = 0;
+    esp_err_t ret = flood_send_trace_request(_data.trace_target_mac, &trace_id);
+    if (ret != ESP_OK)
+    {
+        return;
+    }
+
+    flood_trace_record_t rec = {0};
+    rec.trace_id = trace_id;
+    rec.timestamp = millis();
+    rec.wall_time = (uint32_t)time(nullptr);
+    rec.status = FLOOD_TRACE_STATUS_PENDING;
+
+    flood_trace_save(_data.trace_target_mac, &rec);
+
+    _trace_load_from_file();
+    _data.trace_selected_index = std::max(0, _data.trace_count - 1);
+    if (_data.trace_selected_index >= _data.trace_scroll_offset + TRACE_LIST_MAX_VISIBLE)
+    {
+        _data.trace_scroll_offset = _data.trace_selected_index - TRACE_LIST_MAX_VISIBLE + 1;
+    }
+    _data.need_render = true;
+}
+
+// ---- Traceroute log list view ----
+
+bool AppFlood::_render_traceroute()
+{
+    if (!_data.need_render)
+    {
+        return false;
+    }
+    _data.need_render = false;
+
+    auto c = _data.hal->canvas();
+    int pw = c->width();
+    c->fillScreen(THEME_COLOR_BG);
+    c->setFont(FONT_12);
+
+    // Header: "<  Traceroute  [badge]"
+    c->setTextColor(TFT_ORANGE);
+    c->drawString("<", 2, 0);
+    c->drawString("Traceroute", 14, 0);
+
+    // Count
+    std::string cnt = std::format("{}", _data.trace_count);
+    c->setTextColor(TFT_DARKGREY);
+    int badge_w = 30;
+    c->drawRightString(cnt.c_str(), pw - badge_w - 6, 0);
+
+    // Node color badge in header
+    std::string short_name = _mac_short_label(_data.trace_target_mac);
+    UTILS::UI::draw_node_badge(c, pw - badge_w - 2, 0, LIST_ITEM_HEIGHT, short_name.c_str(), _data.trace_target_mac);
+
+    c->drawFastHLine(0, 14, pw - 1, TFT_DARKGREY);
+
+    if (_data.trace_count == 0)
+    {
+        c->setTextColor(TFT_DARKGREY);
+        c->drawCenterString("<no attempts>", pw / 2, c->height() / 2 - 6);
+        return true;
+    }
+
+    // Clamp
+    if (_data.trace_selected_index >= _data.trace_count)
+        _data.trace_selected_index = _data.trace_count - 1;
+    if (_data.trace_selected_index < 0)
+        _data.trace_selected_index = 0;
+    if (_data.trace_selected_index < _data.trace_scroll_offset)
+        _data.trace_scroll_offset = _data.trace_selected_index;
+    if (_data.trace_selected_index >= _data.trace_scroll_offset + TRACE_LIST_MAX_VISIBLE)
+        _data.trace_scroll_offset = _data.trace_selected_index - TRACE_LIST_MAX_VISIBLE + 1;
+
+    int y = 15;
+    int items_drawn = 0;
+    for (int i = _data.trace_scroll_offset; i < _data.trace_count && items_drawn < TRACE_LIST_MAX_VISIBLE; i++)
+    {
+        const auto& tr = _data.trace_results[i];
+        bool sel = (i == _data.trace_selected_index);
+        uint32_t fg = sel ? THEME_COLOR_SELECTED : THEME_COLOR_UNSELECTED;
+
+        if (sel)
+        {
+            c->fillRect(2, y, pw - 4, LIST_ITEM_HEIGHT, THEME_COLOR_BG_SELECTED);
+        }
+
+        // Status character
+        uint32_t status_color;
+        const char* status_ch;
+        switch (tr.status)
+        {
+        case FLOOD_TRACE_STATUS_SUCCESS:
+            status_color = THEME_COLOR_GREEN;
+            status_ch = "*";
+            break;
+        case FLOOD_TRACE_STATUS_FAILED:
+            status_color = THEME_COLOR_RED;
+            status_ch = "X";
+            break;
+        default:
+            status_color = THEME_COLOR_YELLOW;
+            status_ch = "?";
+            break;
+        }
+        c->setTextColor(sel ? THEME_COLOR_SELECTED : status_color);
+        c->drawString(status_ch, 4, y + 1);
+
+        // Timestamp
+        c->setTextColor(fg);
+        c->drawString(_format_timestamp(tr.wall_time).c_str(), 14, y + 1);
+
+        if (tr.status == FLOOD_TRACE_STATUS_SUCCESS)
+        {
+            // Duration
+            std::string dur;
+            if (tr.elapsed_ms < 1000)
+                dur = std::format("{}ms", tr.elapsed_ms);
+            else
+                dur = std::format("{:.1f}s", tr.elapsed_ms / 1000.0f);
+            c->setTextColor(sel ? THEME_COLOR_SELECTED : THEME_COLOR_YELLOW);
+            c->drawString(dur.c_str(), pw - 78, y + 1);
+
+            // Hops to (route_to_count includes destination, so -1 for mesh hops)
+            int hops_fwd = tr.route_to_count > 0 ? tr.route_to_count - 1 : 0;
+            std::string hops_to = std::format(">{}", hops_fwd);
+            c->setTextColor(sel ? THEME_COLOR_SELECTED : THEME_COLOR_CYAN);
+            c->drawString(hops_to.c_str(), pw - 42, y + 1);
+
+            // Hops back (route_back_count includes source, so -1 for mesh hops)
+            int hops_bck = tr.route_back_count > 0 ? tr.route_back_count - 1 : 0;
+            std::string hops_back = std::format("<{}", hops_bck);
+            c->setTextColor(sel ? THEME_COLOR_SELECTED : THEME_COLOR_MAGENTA);
+            c->drawString(hops_back.c_str(), pw - 22, y + 1);
+        }
+        else if (tr.status == FLOOD_TRACE_STATUS_FAILED)
+        {
+            c->setTextColor(sel ? THEME_COLOR_SELECTED : THEME_COLOR_RED);
+            c->drawString("no route", pw - 58, y + 1);
+        }
+        else
+        {
+            c->setTextColor(sel ? THEME_COLOR_SELECTED : THEME_COLOR_DARKGREY);
+            c->drawString("pending", pw - 52, y + 1);
+        }
+
+        y += LIST_ITEM_HEIGHT + 1;
+        items_drawn++;
+    }
+
+    UTILS::UI::draw_scrollbar(c,
+                              pw - SCROLL_BAR_WIDTH - 1,
+                              15,
+                              SCROLL_BAR_WIDTH,
+                              TRACE_LIST_MAX_VISIBLE * (LIST_ITEM_HEIGHT + 1),
+                              _data.trace_count,
+                              TRACE_LIST_MAX_VISIBLE,
+                              _data.trace_scroll_offset,
+                              SCROLLBAR_MIN_HEIGHT);
+    return true;
+}
+
+bool AppFlood::_handle_traceroute_navigation()
+{
+    _data.hal->keyboard()->updateKeyList();
+    _data.hal->keyboard()->updateKeysState();
+    if (!_data.hal->keyboard()->isPressed())
+    {
+        is_repeat = false;
+        return false;
+    }
+
+    uint32_t now = millis();
+    auto keys_state = _data.hal->keyboard()->keysState();
+
+    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now))
+        {
+            if (keys_state.fn)
+            {
+                if (_data.trace_selected_index > 0)
+                {
+                    _data.trace_selected_index = 0;
+                    _data.trace_scroll_offset = 0;
+                    _data.hal->playNextSound();
+                    _data.need_render = true;
+                }
+            }
+            else if (_data.trace_selected_index > 0)
+            {
+                _data.trace_selected_index--;
+                if (_data.trace_selected_index < _data.trace_scroll_offset)
+                    _data.trace_scroll_offset = _data.trace_selected_index;
+                _data.hal->playNextSound();
+                _data.need_render = true;
+            }
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now))
+        {
+            int max_idx = _data.trace_count - 1;
+            if (keys_state.fn)
+            {
+                if (_data.trace_selected_index < max_idx)
+                {
+                    _data.trace_selected_index = max_idx;
+                    _data.trace_scroll_offset = std::max(0, max_idx - TRACE_LIST_MAX_VISIBLE + 1);
+                    _data.hal->playNextSound();
+                    _data.need_render = true;
+                }
+            }
+            else if (_data.trace_selected_index < max_idx)
+            {
+                _data.trace_selected_index++;
+                if (_data.trace_selected_index >= _data.trace_scroll_offset + TRACE_LIST_MAX_VISIBLE)
+                    _data.trace_scroll_offset++;
+                _data.hal->playNextSound();
+                _data.need_render = true;
+            }
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.trace_selected_index > 0)
+        {
+            _data.hal->playNextSound();
+            _data.trace_selected_index = std::max(0, _data.trace_selected_index - TRACE_LIST_MAX_VISIBLE);
+            _data.trace_scroll_offset = std::max(0, _data.trace_selected_index);
+            _data.need_render = true;
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now))
+        {
+            int max_idx = _data.trace_count - 1;
+            if (_data.trace_selected_index < max_idx)
+            {
+                _data.hal->playNextSound();
+                _data.trace_selected_index = std::min(max_idx, _data.trace_selected_index + TRACE_LIST_MAX_VISIBLE);
+                _data.trace_scroll_offset = std::max(0, _data.trace_selected_index - TRACE_LIST_MAX_VISIBLE + 1);
+                _data.need_render = true;
+            }
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_T))
+    {
+        _data.hal->playNextSound();
+        _data.hal->keyboard()->waitForRelease(KEY_NUM_T);
+        _trace_send_request();
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER))
+    {
+        _data.hal->playNextSound();
+        _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
+        if (_data.trace_selected_index >= 0 && _data.trace_selected_index < _data.trace_count)
+        {
+            const auto& tr = _data.trace_results[_data.trace_selected_index];
+            if (tr.status == FLOOD_TRACE_STATUS_SUCCESS)
+            {
+                _data.trace_detail = tr;
+                _data.trace_detail_scroll = 0;
+                _data.current_view = view_traceroute_detail;
+                _data.need_render = true;
+            }
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC))
+    {
+        _data.hal->playNextSound();
+        _data.hal->keyboard()->waitForRelease(KEY_NUM_ESC);
+        _data.current_view = view_devices;
+        _data.need_refresh = true;
+        _data.need_render = true;
+    }
+    return true;
+}
+
+bool AppFlood::_render_traceroute_hint()
+{
+    return hl_text_render(&_data.hint_hl_ctx,
+                          HINT_TRACE,
+                          0,
+                          _data.hal->canvas()->height() - 8,
+                          TFT_DARKGREY,
+                          TFT_WHITE,
+                          THEME_COLOR_BG);
+}
+
+// ---- Traceroute detail view (path visualization) ----
+
+bool AppFlood::_render_traceroute_detail()
+{
+    if (!_data.need_render)
+    {
+        return false;
+    }
+    _data.need_render = false;
+
+    auto c = _data.hal->canvas();
+    int pw = c->width();
+    c->fillScreen(THEME_COLOR_BG);
+    c->setFont(FONT_12);
+
+    const auto& res = _data.trace_detail;
+    uint8_t our_mac[6];
+    flood_get_our_mac(our_mac);
+
+    // Header: "< [timestamp]  [us] -> [dest]"
+    c->setTextColor(TFT_ORANGE);
+    c->drawString("<", 2, 0);
+    c->drawString(_format_timestamp(res.wall_time).c_str(), 14, 0);
+
+    int badge_w = 30;
+    int badge_gap = 8;
+    int dest_x = pw - badge_w - 2;
+    int arrow_x = dest_x - badge_gap;
+    int our_x = arrow_x - badge_w - 2;
+
+    std::string our_lbl = _mac_short_label(our_mac);
+    std::string dest_lbl = _mac_short_label(_data.trace_target_mac);
+    UTILS::UI::draw_node_badge(c, our_x, 0, LIST_ITEM_HEIGHT, our_lbl.c_str(), our_mac);
+    c->setTextColor(TFT_DARKGREY);
+    c->drawString(">", arrow_x + 1, 0);
+    UTILS::UI::draw_node_badge(c, dest_x, 0, LIST_ITEM_HEIGHT, dest_lbl.c_str(), _data.trace_target_mac);
+    c->drawFastHLine(0, 14, pw - 1, TFT_DARKGREY);
+
+    // Build path rows
+    struct PathRow
+    {
+        std::string name;
+        uint8_t mac[6];
+        uint8_t signal;
+        bool is_header;
+    };
+    std::vector<PathRow> rows;
+
+    // Route TO
+    {
+        PathRow hdr = {};
+        hdr.name = std::format("-- Route to ({} hops) --", res.route_to_count > 0 ? res.route_to_count - 1 : 0);
+        hdr.is_header = true;
+        rows.push_back(hdr);
+    }
+    {
+        PathRow r = {};
+        r.name = our_lbl;
+        memcpy(r.mac, our_mac, 6);
+        r.signal = 0;
+        r.is_header = false;
+        rows.push_back(r);
+    }
+    for (int i = 0; i < res.route_to_count; i++)
+    {
+        PathRow r = {};
+        r.name = _mac_short_label(res.route_to[i].mac);
+        memcpy(r.mac, res.route_to[i].mac, 6);
+        r.signal = res.route_to[i].signal;
+        r.is_header = false;
+        rows.push_back(r);
+    }
+
+    // Route BACK
+    {
+        PathRow hdr = {};
+        hdr.name = std::format("-- Route back ({} hops) --", res.route_back_count > 0 ? res.route_back_count - 1 : 0);
+        hdr.is_header = true;
+        rows.push_back(hdr);
+    }
+    {
+        PathRow r = {};
+        r.name = dest_lbl;
+        memcpy(r.mac, _data.trace_target_mac, 6);
+        r.signal = 0;
+        r.is_header = false;
+        rows.push_back(r);
+    }
+    for (int i = 0; i < res.route_back_count; i++)
+    {
+        PathRow r = {};
+        r.name = _mac_short_label(res.route_back[i].mac);
+        memcpy(r.mac, res.route_back[i].mac, 6);
+        r.signal = res.route_back[i].signal;
+        r.is_header = false;
+        rows.push_back(r);
+    }
+
+    // Render visible rows
+    const int row_h = LIST_ITEM_HEIGHT;
+    const int y_start = 15;
+    const int max_visible = (c->height() - y_start - 9) / (row_h + 1);
+    int total_rows = (int)rows.size();
+    int max_scroll = std::max(0, total_rows - max_visible);
+    if (_data.trace_detail_scroll > max_scroll)
+        _data.trace_detail_scroll = max_scroll;
+    if (_data.trace_detail_scroll < 0)
+        _data.trace_detail_scroll = 0;
+
+    int y = y_start;
+    for (int i = 0; i < max_visible && (_data.trace_detail_scroll + i) < total_rows; i++)
+    {
+        const auto& row = rows[_data.trace_detail_scroll + i];
+
+        if (row.is_header)
+        {
+            c->setTextColor(TFT_ORANGE);
+            c->drawString(row.name.c_str(), 4, y + 1);
+        }
+        else
+        {
+            int pill_w = UTILS::UI::draw_node_badge(c, 4, y, row_h, row.name.c_str(), row.mac);
+
+            c->setTextColor(TFT_DARKGREY);
+            c->drawString(">", pill_w + 8, y + 1);
+
+            if (row.signal > 0)
+            {
+                std::string sig = std::format("{}%", row.signal);
+                c->setTextColor(UTILS::UI::signal_quality_color(row.signal));
+                c->drawString(sig.c_str(), pill_w + 20, y + 1);
+            }
+        }
+        y += row_h + 1;
+    }
+
+    UTILS::UI::draw_scrollbar(c,
+                              pw - SCROLL_BAR_WIDTH - 1,
+                              y_start,
+                              SCROLL_BAR_WIDTH,
+                              max_visible * (row_h + 1),
+                              total_rows,
+                              max_visible,
+                              _data.trace_detail_scroll,
+                              SCROLLBAR_MIN_HEIGHT);
+    return true;
+}
+
+bool AppFlood::_handle_traceroute_detail_navigation()
+{
+    _data.hal->keyboard()->updateKeyList();
+    _data.hal->keyboard()->updateKeysState();
+    if (!_data.hal->keyboard()->isPressed())
+    {
+        is_repeat = false;
+        return false;
+    }
+
+    uint32_t now = millis();
+    const auto& res = _data.trace_detail;
+    int total_rows = 4 + res.route_to_count + res.route_back_count;
+    int max_visible = (_data.hal->canvas()->height() - 24) / (LIST_ITEM_HEIGHT + 1);
+    int max_scroll = std::max(0, total_rows - max_visible);
+
+    if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ESC))
+    {
+        _data.hal->playNextSound();
+        _data.hal->keyboard()->waitForRelease(KEY_NUM_ESC);
+        _data.current_view = view_traceroute;
+        _data.need_render = true;
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.trace_detail_scroll < max_scroll)
+        {
+            _data.trace_detail_scroll++;
+            _data.hal->playNextSound();
+            _data.need_render = true;
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.trace_detail_scroll > 0)
+        {
+            _data.trace_detail_scroll--;
+            _data.hal->playNextSound();
+            _data.need_render = true;
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.trace_detail_scroll < max_scroll)
+        {
+            _data.trace_detail_scroll = std::min(_data.trace_detail_scroll + max_visible, max_scroll);
+            _data.hal->playNextSound();
+            _data.need_render = true;
+        }
+    }
+    else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
+    {
+        if (key_repeat_check(is_repeat, next_fire_ts, now) && _data.trace_detail_scroll > 0)
+        {
+            _data.trace_detail_scroll = std::max(_data.trace_detail_scroll - max_visible, 0);
+            _data.hal->playNextSound();
+            _data.need_render = true;
+        }
+    }
+    return true;
+}
+
+bool AppFlood::_render_traceroute_detail_hint()
+{
+    return hl_text_render(&_data.hint_hl_ctx,
+                          HINT_TRACE_DETAIL,
+                          0,
+                          _data.hal->canvas()->height() - 8,
+                          TFT_DARKGREY,
+                          TFT_WHITE,
+                          THEME_COLOR_BG);
 }

@@ -70,7 +70,9 @@ extern "C"
         MESH_PACKET_TYPE_HELLO = 0x01,   /**< Hello/beacon packet for device discovery */
         MESH_PACKET_TYPE_MESSAGE = 0x02, /**< Channel/group chat message */
         MESH_PACKET_TYPE_PRIVATE = 0x03, /**< Private peer-to-peer message */
-        MESH_PACKET_TYPE_ACK = 0x04,     /**< Acknowledgment packet */
+        MESH_PACKET_TYPE_ACK = 0x04,         /**< Acknowledgment packet */
+        MESH_PACKET_TYPE_TRACE_REQ = 0x05,   /**< Traceroute request - collects path hops */
+        MESH_PACKET_TYPE_TRACE_REPLY = 0x06, /**< Traceroute reply - returns collected path */
     } mesh_packet_type_t;
 
     /**
@@ -253,6 +255,92 @@ extern "C"
         uint8_t status;              /**< Acknowledgment status (success/failure) */
         uint8_t reserved[3];         /**< Reserved for future use (padding) */
     } __attribute__((packed)) mesh_ack_packet_t;
+
+    /* ========================================================================
+     * Traceroute Structures
+     * ======================================================================== */
+
+#define FLOOD_TRACE_MAX_HOPS 9       /**< Maximum traceroute hop entries per direction */
+#define FLOOD_TRACE_TIMEOUT_MS 15000 /**< Traceroute reply timeout (ms) */
+
+#define FLOOD_TRACE_STATUS_PENDING 0
+#define FLOOD_TRACE_STATUS_SUCCESS 1
+#define FLOOD_TRACE_STATUS_FAILED 2
+
+    /**
+     * @brief Single hop entry in a traceroute path
+     */
+    typedef struct
+    {
+        uint8_t mac[6];  /**< Node MAC address at this hop */
+        uint8_t signal;  /**< Signal quality (0-100) when packet was received at this hop */
+    } __attribute__((packed)) flood_trace_hop_t;
+
+    /**
+     * @brief Traceroute request packet - each relay adds its hop info before forwarding
+     */
+    typedef struct
+    {
+        mesh_packet_header_t header;
+        uint32_t trace_id;                          /**< Unique trace identifier */
+        uint8_t hop_count;                          /**< Number of hops recorded so far */
+        flood_trace_hop_t hops[FLOOD_TRACE_MAX_HOPS]; /**< Accumulated hop entries */
+    } __attribute__((packed)) mesh_trace_request_t;
+
+    /**
+     * @brief Traceroute reply packet - carries forward path and accumulates return path
+     */
+    typedef struct
+    {
+        mesh_packet_header_t header;
+        uint32_t trace_id;                                  /**< Matching trace ID from request */
+        uint8_t route_to_count;                             /**< Number of hops in forward path */
+        uint8_t route_back_count;                           /**< Number of hops in return path */
+        flood_trace_hop_t route_to[FLOOD_TRACE_MAX_HOPS];   /**< Forward path (filled by request) */
+        flood_trace_hop_t route_back[FLOOD_TRACE_MAX_HOPS]; /**< Return path (filled by reply relays) */
+    } __attribute__((packed)) mesh_trace_reply_t;
+
+    /**
+     * @brief Traceroute result delivered to application via callback
+     */
+    typedef struct
+    {
+        uint32_t trace_id;
+        uint8_t route_to_count;
+        uint8_t route_back_count;
+        flood_trace_hop_t route_to[FLOOD_TRACE_MAX_HOPS];
+        flood_trace_hop_t route_back[FLOOD_TRACE_MAX_HOPS];
+    } flood_trace_result_t;
+
+    /* ---- Persistent trace record (stored in .trc files) ---- */
+
+#define FLOOD_TRACE_MAX_RECORDS 50 /**< Max trace records per device file */
+
+    /**
+     * @brief Fixed-size trace record stored in traces.trc (circular file)
+     */
+    typedef struct
+    {
+        uint32_t trace_id;
+        uint32_t timestamp;      /**< millis() when request was sent */
+        uint32_t elapsed_ms;     /**< Round-trip time (0 if pending/failed) */
+        uint32_t wall_time;      /**< Unix epoch (time(nullptr)) for display */
+        uint8_t status;          /**< FLOOD_TRACE_STATUS_* */
+        uint8_t route_to_count;
+        uint8_t route_back_count;
+        uint8_t _pad;
+        flood_trace_hop_t route_to[FLOOD_TRACE_MAX_HOPS];
+        flood_trace_hop_t route_back[FLOOD_TRACE_MAX_HOPS];
+    } __attribute__((packed)) flood_trace_record_t;
+
+    /**
+     * @brief Header of traces.trc circular file
+     */
+    typedef struct
+    {
+        uint16_t count;     /**< Valid records stored (0..FLOOD_TRACE_MAX_RECORDS) */
+        uint16_t write_pos; /**< Next write slot (circular) */
+    } __attribute__((packed)) flood_trace_file_header_t;
 
     /**
      * @brief Message packet cache for duplicate detection
@@ -932,6 +1020,83 @@ extern "C"
      * @note Called from flood task context
      */
     esp_err_t flood_register_device_callback(flood_device_callback_t callback, void* user_data);
+
+    /* ========================================================================
+     * Traceroute Callback and API
+     * ======================================================================== */
+
+    /**
+     * @brief Traceroute result callback function type
+     *
+     * @param result Pointer to traceroute result with route_to and route_back paths
+     * @param user_data User-provided context pointer
+     */
+    typedef void (*flood_trace_callback_t)(const flood_trace_result_t* result, void* user_data);
+
+    /**
+     * @brief Register callback for traceroute results
+     *
+     * @param callback Callback function pointer (NULL to unregister)
+     * @param user_data Context pointer passed to callback
+     * @return ESP_OK on success
+     */
+    esp_err_t flood_register_trace_callback(flood_trace_callback_t callback, void* user_data);
+
+    /**
+     * @brief Send a traceroute request to a specific device
+     *
+     * Sends a trace request that collects path and signal info at each hop.
+     * The destination sends a reply back, also collecting return path info.
+     *
+     * @param dest_mac Destination MAC address (6 bytes)
+     * @param out_trace_id Pointer to receive the trace ID for tracking (can be NULL)
+     * @return ESP_OK on success
+     */
+    esp_err_t flood_send_trace_request(const uint8_t* dest_mac, uint32_t* out_trace_id);
+
+    /* ========================================================================
+     * Traceroute File Storage (per-device .trc files, circular buffer)
+     * ======================================================================== */
+
+    /**
+     * @brief Append a trace record to the device's .trc file (circular, max 50)
+     *
+     * @param mac Device MAC address (6 bytes)
+     * @param record Record to save
+     * @return ESP_OK on success
+     */
+    esp_err_t flood_trace_save(const uint8_t* mac, const flood_trace_record_t* record);
+
+    /**
+     * @brief Update an existing trace record by trace_id (in-place seek + write)
+     *
+     * @param mac Device MAC address (6 bytes)
+     * @param trace_id Trace ID to find and update
+     * @param record New record data
+     * @return ESP_OK if found and updated, ESP_ERR_NOT_FOUND if not found
+     */
+    esp_err_t flood_trace_update(const uint8_t* mac, uint32_t trace_id, const flood_trace_record_t* record);
+
+    /**
+     * @brief Get the number of trace records stored for a device
+     *
+     * @param mac Device MAC address (6 bytes)
+     * @param count Output: number of records
+     * @return ESP_OK on success
+     */
+    esp_err_t flood_trace_get_count(const uint8_t* mac, uint32_t* count);
+
+    /**
+     * @brief Load all trace records in chronological order
+     *
+     * Resolves the circular buffer order so records[0] is the oldest.
+     *
+     * @param mac Device MAC address (6 bytes)
+     * @param records Pre-allocated buffer (at least FLOOD_TRACE_MAX_RECORDS)
+     * @param loaded Output: actual records loaded
+     * @return ESP_OK on success
+     */
+    esp_err_t flood_trace_load_all(const uint8_t* mac, flood_trace_record_t* records, uint32_t* loaded);
 
     /* ========================================================================
      * Device Enumeration and Information Functions

@@ -33,6 +33,7 @@ static const char* TAG = "flood";
 static const char* DEVICE_META_FILE = "meta.bin";
 static const char* DEVICES_DIRECTORY = "devices";
 static const char* MESSAGES_FILE = "messages.bin";
+static const char* TRACES_FILE = "traces.trc";
 static const char* CHANNELS_DIRECTORY = "channels";
 static const char* CHANNEL_META_FILE = "meta.bin";
 
@@ -100,6 +101,8 @@ static flood_packet_callback_t s_sent_packet_callback = NULL;
 static void* s_sent_packet_callback_user_data = NULL;
 static flood_packet_callback_t s_received_packet_callback = NULL;
 static void* s_received_packet_callback_user_data = NULL;
+static flood_trace_callback_t s_trace_callback = NULL;
+static void* s_trace_callback_user_data = NULL;
 /* Sequence numbers */
 static uint32_t s_sequence_number = 0;
 
@@ -116,6 +119,8 @@ static void flood_espnow_send_cb(const esp_now_send_info_t* tx_info, esp_now_sen
 static void flood_espnow_recv_cb(const esp_now_recv_info_t* recv_info, const uint8_t* data, int len);
 static esp_err_t flood_process_packet(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi);
 static esp_err_t flood_forward_packet(const uint8_t* data, uint16_t length);
+static esp_err_t flood_process_trace_request(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi);
+static esp_err_t flood_process_trace_reply(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi);
 static bool flood_is_broadcast_mac(const uint8_t* mac);
 static bool flood_is_our_mac(const uint8_t* mac);
 static uint32_t flood_get_timestamp(void);
@@ -127,6 +132,7 @@ static esp_err_t get_devices_path(char* path);
 static esp_err_t get_device_path(const uint8_t* mac, char* path);
 static esp_err_t get_device_meta_path(const uint8_t* mac, char* path);
 static esp_err_t flood_save_device_persistent_internal(const mesh_device_persistent_t* device);
+static esp_err_t create_device_directory(const uint8_t* mac);
 static esp_err_t flood_load_device_persistent_from_meta_internal(const char* meta_path, mesh_device_persistent_t* device);
 static esp_err_t flood_load_device_persistent_internal(const uint8_t* mac, mesh_device_persistent_t* device);
 static esp_err_t flood_update_device_volatile_internal(const uint8_t* mac, const mesh_device_volatile_t* volatile_data);
@@ -134,6 +140,7 @@ static esp_err_t flood_get_device_volatile_internal(const uint8_t* mac, mesh_dev
 static esp_err_t flood_remove_device_volatile_internal(const uint8_t* mac);
 static void flood_cleanup_volatile_devices(void);
 static esp_err_t get_messages_file_path(const uint8_t* mac, char* path);
+static esp_err_t get_traces_file_path(const uint8_t* mac, char* path);
 static esp_err_t
 flood_load_messages_internal(const uint8_t* mac, uint32_t start, uint32_t count, message_record_t* records, uint32_t* loaded);
 static int32_t flood_save_message_internal(const uint8_t* mac,
@@ -286,6 +293,10 @@ static char* flood_packet_type_to_string(uint8_t type)
         return "PRIVATE";
     case MESH_PACKET_TYPE_ACK:
         return "ACK";
+    case MESH_PACKET_TYPE_TRACE_REQ:
+        return "TRACE_REQ";
+    case MESH_PACKET_TYPE_TRACE_REPLY:
+        return "TRACE_RPL";
     default:
         return "UNKNOWN";
     }
@@ -876,6 +887,108 @@ static esp_err_t flood_process_ack_packet(const uint8_t* data, uint16_t length, 
     }
 }
 
+static esp_err_t flood_process_trace_request(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi)
+{
+    if (length < sizeof(mesh_packet_header_t) + 5)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    uint8_t packet[ESP_NOW_MAX_DATA_LEN];
+    memcpy(packet, data, length);
+    mesh_trace_request_t* trace_req = (mesh_trace_request_t*)packet;
+    mesh_packet_header_t* header = &trace_req->header;
+
+    if (trace_req->hop_count < FLOOD_TRACE_MAX_HOPS)
+    {
+        memcpy(trace_req->hops[trace_req->hop_count].mac, s_our_mac, 6);
+        trace_req->hops[trace_req->hop_count].signal = flood_rssi_to_percentage(rssi);
+        trace_req->hop_count++;
+    }
+
+    if (flood_is_our_mac(header->dest_mac))
+    {
+        ESP_LOGI(TAG, "TRACE_REQ *%08x arrived, sending reply (%d hops)", trace_req->trace_id, trace_req->hop_count > 0 ? trace_req->hop_count - 1 : 0);
+        mesh_trace_reply_t reply = {0};
+        reply.header.magic = MESH_MAGIC_NUMBER;
+        reply.header.version = MESH_PROTOCOL_VERSION;
+        reply.header.type = MESH_PACKET_TYPE_TRACE_REPLY;
+        reply.header.flags = 0;
+        reply.header.hops = 0;
+        reply.header.ttl = s_max_ttl;
+        reply.header.sequence = s_sequence_number++;
+        memcpy(reply.header.source_mac, s_our_mac, 6);
+        memcpy(reply.header.dest_mac, header->source_mac, 6);
+        reply.trace_id = trace_req->trace_id;
+        reply.route_to_count = trace_req->hop_count;
+        reply.route_back_count = 0;
+        memcpy(reply.route_to, trace_req->hops, trace_req->hop_count * sizeof(flood_trace_hop_t));
+        return flood_enqueue_packet((uint8_t*)&reply, sizeof(mesh_trace_reply_t));
+    }
+    else
+    {
+        if (header->ttl > 0)
+        {
+            header->ttl--;
+            header->hops++;
+            header->flags |= MESH_FLAG_FORWARDED;
+            return flood_enqueue_packet(packet, sizeof(mesh_trace_request_t));
+        }
+        return ESP_OK;
+    }
+}
+
+static esp_err_t flood_process_trace_reply(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi)
+{
+    if (length < sizeof(mesh_packet_header_t) + 6)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    uint8_t packet[ESP_NOW_MAX_DATA_LEN];
+    memcpy(packet, data, length);
+    mesh_trace_reply_t* trace_rpl = (mesh_trace_reply_t*)packet;
+    mesh_packet_header_t* header = &trace_rpl->header;
+
+    if (trace_rpl->route_back_count < FLOOD_TRACE_MAX_HOPS)
+    {
+        memcpy(trace_rpl->route_back[trace_rpl->route_back_count].mac, s_our_mac, 6);
+        trace_rpl->route_back[trace_rpl->route_back_count].signal = flood_rssi_to_percentage(rssi);
+        trace_rpl->route_back_count++;
+    }
+
+    if (flood_is_our_mac(header->dest_mac))
+    {
+        ESP_LOGI(TAG,
+                 "TRACE_REPLY *%08x: %d hops to, %d hops back",
+                 trace_rpl->trace_id,
+                 trace_rpl->route_to_count > 0 ? trace_rpl->route_to_count - 1 : 0,
+                 trace_rpl->route_back_count > 0 ? trace_rpl->route_back_count - 1 : 0);
+        if (s_trace_callback != NULL)
+        {
+            flood_trace_result_t result = {0};
+            result.trace_id = trace_rpl->trace_id;
+            result.route_to_count = trace_rpl->route_to_count;
+            result.route_back_count = trace_rpl->route_back_count;
+            memcpy(result.route_to, trace_rpl->route_to, trace_rpl->route_to_count * sizeof(flood_trace_hop_t));
+            memcpy(result.route_back, trace_rpl->route_back, trace_rpl->route_back_count * sizeof(flood_trace_hop_t));
+            s_trace_callback(&result, s_trace_callback_user_data);
+        }
+        return ESP_OK;
+    }
+    else
+    {
+        if (header->ttl > 0)
+        {
+            header->ttl--;
+            header->hops++;
+            header->flags |= MESH_FLAG_FORWARDED;
+            return flood_enqueue_packet(packet, sizeof(mesh_trace_reply_t));
+        }
+        return ESP_OK;
+    }
+}
+
 static esp_err_t flood_process_packet(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi)
 {
     if (length < sizeof(mesh_packet_header_t))
@@ -951,6 +1064,12 @@ static esp_err_t flood_process_packet(const uint8_t* data, uint16_t length, cons
         break;
     case MESH_PACKET_TYPE_ACK:
         ret = flood_process_ack_packet(data, length, src_mac, rssi);
+        break;
+    case MESH_PACKET_TYPE_TRACE_REQ:
+        ret = flood_process_trace_request(data, length, src_mac, rssi);
+        break;
+    case MESH_PACKET_TYPE_TRACE_REPLY:
+        ret = flood_process_trace_reply(data, length, src_mac, rssi);
         break;
     default:
         ret = ESP_ERR_INVALID_STATE;
@@ -1251,6 +1370,18 @@ static esp_err_t get_messages_file_path(const uint8_t* mac, char* path)
     if (get_device_path(mac, path) == ESP_OK)
     {
         if (path_join(path, MESSAGES_FILE))
+        {
+            return ESP_OK;
+        }
+    }
+    return ESP_FAIL;
+}
+
+static esp_err_t get_traces_file_path(const uint8_t* mac, char* path)
+{
+    if (get_device_path(mac, path) == ESP_OK)
+    {
+        if (path_join(path, TRACES_FILE))
         {
             return ESP_OK;
         }
@@ -2022,12 +2153,25 @@ esp_err_t flood_remove_device(const uint8_t* mac)
                 ESP_LOGD(TAG, "Removed device metadata file: %s", meta_path);
             }
 
-            // Remove the device directory if empty
+            // Remove messages file
+            char msg_path[PATH_BUF_SIZE];
+            if (get_messages_file_path(mac, msg_path) == ESP_OK)
+            {
+                unlink(msg_path);
+            }
+
+            // Remove traces file
+            char trc_path[PATH_BUF_SIZE];
+            if (get_traces_file_path(mac, trc_path) == ESP_OK)
+            {
+                unlink(trc_path);
+            }
+
+            // Remove the device directory (should be empty now)
             char* device_path = meta_path;
             if (get_device_path(mac, device_path) == ESP_OK)
             {
-                //! @todo: remove messages from device messages directory
-                rmdir(device_path); // Ignore error if directory not empty
+                rmdir(device_path);
             }
         }
 
@@ -2169,6 +2313,299 @@ esp_err_t flood_register_received_packet_callback(flood_packet_callback_t callba
 {
     s_received_packet_callback = callback;
     s_received_packet_callback_user_data = user_data;
+    return ESP_OK;
+}
+
+esp_err_t flood_register_trace_callback(flood_trace_callback_t callback, void* user_data)
+{
+    s_trace_callback = callback;
+    s_trace_callback_user_data = user_data;
+    return ESP_OK;
+}
+
+esp_err_t flood_send_trace_request(const uint8_t* dest_mac, uint32_t* out_trace_id)
+{
+    if (!s_flood_initialized || !s_flood_running)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (dest_mac == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    mesh_trace_request_t trace_req = {0};
+    mesh_packet_header_t* header = &trace_req.header;
+    header->magic = MESH_MAGIC_NUMBER;
+    header->version = MESH_PROTOCOL_VERSION;
+    header->type = MESH_PACKET_TYPE_TRACE_REQ;
+    header->flags = 0;
+    header->hops = 0;
+    header->ttl = s_max_ttl;
+    header->sequence = s_sequence_number++;
+    memcpy(header->source_mac, s_our_mac, 6);
+    memcpy(header->dest_mac, dest_mac, 6);
+    trace_req.trace_id = header->sequence;
+    trace_req.hop_count = 0;
+
+    if (out_trace_id != NULL)
+    {
+        *out_trace_id = trace_req.trace_id;
+    }
+
+    esp_err_t ret = flood_enqueue_packet((uint8_t*)&trace_req, sizeof(mesh_trace_request_t));
+    if (ret == ESP_OK)
+    {
+        ESP_LOGI(TAG, "[Q] TRACE_REQ *%08x to " MACSTR, header->sequence, MAC2STR(dest_mac));
+    }
+    return ret;
+}
+
+/* ========================================================================
+ * Traceroute File Storage (.trc circular files)
+ * ======================================================================== */
+
+esp_err_t flood_trace_save(const uint8_t* mac, const flood_trace_record_t* record)
+{
+    if (mac == NULL || record == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_flood_initialized)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_flood_mutex, pdMS_TO_TICKS(500)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    create_device_directory(mac);
+
+    char path[PATH_BUF_SIZE];
+    esp_err_t ret = get_traces_file_path(mac, path);
+    if (ret != ESP_OK)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ret;
+    }
+
+    flood_trace_file_header_t hdr = {0};
+    FILE* file = fopen(path, "r+b");
+    if (file == NULL)
+    {
+        file = fopen(path, "w+b");
+        if (file == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to create traces file: %s", path);
+            xSemaphoreGive(s_flood_mutex);
+            return ESP_FAIL;
+        }
+        flood_trace_file_header_t empty_hdr = {0};
+        fwrite(&empty_hdr, sizeof(empty_hdr), 1, file);
+        flood_trace_record_t empty_rec;
+        memset(&empty_rec, 0, sizeof(empty_rec));
+        for (int i = 0; i < FLOOD_TRACE_MAX_RECORDS; i++)
+            fwrite(&empty_rec, sizeof(empty_rec), 1, file);
+        fseek(file, 0, SEEK_SET);
+    }
+
+    if (fread(&hdr, sizeof(hdr), 1, file) != 1)
+    {
+        hdr.count = 0;
+        hdr.write_pos = 0;
+    }
+
+    long record_offset = sizeof(flood_trace_file_header_t) + hdr.write_pos * sizeof(flood_trace_record_t);
+    fseek(file, record_offset, SEEK_SET);
+    fwrite(record, sizeof(flood_trace_record_t), 1, file);
+
+    if (hdr.count < FLOOD_TRACE_MAX_RECORDS)
+    {
+        hdr.count++;
+    }
+    hdr.write_pos = (hdr.write_pos + 1) % FLOOD_TRACE_MAX_RECORDS;
+
+    fseek(file, 0, SEEK_SET);
+    fwrite(&hdr, sizeof(hdr), 1, file);
+    fclose(file);
+
+    xSemaphoreGive(s_flood_mutex);
+    return ESP_OK;
+}
+
+esp_err_t flood_trace_update(const uint8_t* mac, uint32_t trace_id, const flood_trace_record_t* record)
+{
+    if (mac == NULL || record == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_flood_initialized)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_flood_mutex, pdMS_TO_TICKS(500)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    char path[PATH_BUF_SIZE];
+    esp_err_t ret = get_traces_file_path(mac, path);
+    if (ret != ESP_OK)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ret;
+    }
+
+    FILE* file = fopen(path, "r+b");
+    if (file == NULL)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    flood_trace_file_header_t hdr;
+    if (fread(&hdr, sizeof(hdr), 1, file) != 1)
+    {
+        fclose(file);
+        xSemaphoreGive(s_flood_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    for (uint16_t i = 0; i < hdr.count; i++)
+    {
+        long offset = sizeof(flood_trace_file_header_t) + i * sizeof(flood_trace_record_t);
+        fseek(file, offset, SEEK_SET);
+        flood_trace_record_t tmp;
+        if (fread(&tmp, sizeof(tmp), 1, file) != 1)
+        {
+            break;
+        }
+        if (tmp.trace_id == trace_id)
+        {
+            fseek(file, offset, SEEK_SET);
+            fwrite(record, sizeof(flood_trace_record_t), 1, file);
+            fclose(file);
+            xSemaphoreGive(s_flood_mutex);
+            return ESP_OK;
+        }
+    }
+
+    fclose(file);
+    xSemaphoreGive(s_flood_mutex);
+    return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t flood_trace_get_count(const uint8_t* mac, uint32_t* count)
+{
+    if (mac == NULL || count == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *count = 0;
+    if (!s_flood_initialized)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_flood_mutex, pdMS_TO_TICKS(500)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    char path[PATH_BUF_SIZE];
+    esp_err_t ret = get_traces_file_path(mac, path);
+    if (ret != ESP_OK)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ret;
+    }
+
+    FILE* file = fopen(path, "rb");
+    if (file == NULL)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ESP_OK;
+    }
+
+    flood_trace_file_header_t hdr;
+    if (fread(&hdr, sizeof(hdr), 1, file) == 1)
+    {
+        *count = hdr.count;
+    }
+    fclose(file);
+
+    xSemaphoreGive(s_flood_mutex);
+    return ESP_OK;
+}
+
+esp_err_t flood_trace_load_all(const uint8_t* mac, flood_trace_record_t* records, uint32_t* loaded)
+{
+    if (mac == NULL || records == NULL || loaded == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *loaded = 0;
+    if (!s_flood_initialized)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_flood_mutex, pdMS_TO_TICKS(500)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    char path[PATH_BUF_SIZE];
+    esp_err_t ret = get_traces_file_path(mac, path);
+    if (ret != ESP_OK)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ret;
+    }
+
+    FILE* file = fopen(path, "rb");
+    if (file == NULL)
+    {
+        xSemaphoreGive(s_flood_mutex);
+        return ESP_OK;
+    }
+
+    flood_trace_file_header_t hdr;
+    if (fread(&hdr, sizeof(hdr), 1, file) != 1 || hdr.count == 0)
+    {
+        fclose(file);
+        xSemaphoreGive(s_flood_mutex);
+        return ESP_OK;
+    }
+
+    if (hdr.count < FLOOD_TRACE_MAX_RECORDS)
+    {
+        fseek(file, sizeof(flood_trace_file_header_t), SEEK_SET);
+        size_t rd = fread(records, sizeof(flood_trace_record_t), hdr.count, file);
+        *loaded = (uint32_t)rd;
+    }
+    else
+    {
+        uint16_t oldest = hdr.write_pos;
+        uint32_t idx = 0;
+        for (uint16_t i = 0; i < hdr.count; i++)
+        {
+            uint16_t slot = (oldest + i) % FLOOD_TRACE_MAX_RECORDS;
+            long offset = sizeof(flood_trace_file_header_t) + slot * sizeof(flood_trace_record_t);
+            fseek(file, offset, SEEK_SET);
+            if (fread(&records[idx], sizeof(flood_trace_record_t), 1, file) == 1)
+            {
+                idx++;
+            }
+        }
+        *loaded = idx;
+    }
+
+    fclose(file);
+    xSemaphoreGive(s_flood_mutex);
     return ESP_OK;
 }
 

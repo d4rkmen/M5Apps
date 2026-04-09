@@ -35,6 +35,8 @@ namespace MOONCAKE::APPS
         uint8_t unread_messages = 0;
     };
 
+#define TRACE_LIST_MAX_VISIBLE 6
+
     class AppFlood : public APP_BASE
     {
 
@@ -43,6 +45,8 @@ namespace MOONCAKE::APPS
         {
             view_devices = 0,
             view_chat = 1,
+            view_traceroute = 2,
+            view_traceroute_detail = 3,
         };
 
         struct
@@ -72,6 +76,18 @@ namespace MOONCAKE::APPS
             int tot_lines = 0;
             int max_lines = 0;
             uint8_t chat_mac[6] = {0};
+            // traceroute view
+            uint8_t trace_target_mac[6] = {0};
+            std::string trace_target_name;
+            std::vector<flood_trace_record_t> trace_results;
+            int trace_count = 0;
+            int trace_selected_index = 0;
+            int trace_scroll_offset = 0;
+            volatile bool trace_result_ready = false;
+            flood_trace_result_t trace_staged = {0};
+            // traceroute detail view
+            flood_trace_record_t trace_detail = {0};
+            int trace_detail_scroll = 0;
         } _data;
 
         // Data
@@ -92,6 +108,20 @@ namespace MOONCAKE::APPS
         bool _handle_chat_navigation();
         bool _render_devices_hint();
         bool _render_chat_hint();
+
+        // Traceroute
+        bool _render_traceroute();
+        bool _handle_traceroute_navigation();
+        bool _render_traceroute_hint();
+        bool _render_traceroute_detail();
+        bool _handle_traceroute_detail_navigation();
+        bool _render_traceroute_detail_hint();
+        void _trace_load_from_file();
+        void _trace_send_request();
+        void _trace_process_staged_result();
+        void _trace_check_timeouts();
+        std::string _mac_short_label(const uint8_t* mac);
+        std::string _format_timestamp(uint32_t timestamp);
 
         // System bar integration
         void _request_system_bar_update();
@@ -122,6 +152,7 @@ namespace MOONCAKE::APPS
         void playMessageSentSound() { _data.hal->playMessageSentSound(); }
         void ledYellowBlink() { _data.hal->led()->blink_once({255, 255, 0}, 50); }
         void ledBlueBlink() { _data.hal->led()->blink_once({0, 255, 255}, 50); }
+        void onTraceResult(const flood_trace_result_t* result);
         // void reloadChatMessages() { _chat_reload_messages(); }
     };
 
