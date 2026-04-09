@@ -700,54 +700,68 @@ bool AppInstaller::_render_file_list()
         {
             _data.hal->canvas()->setTextColor(TFT_DARKGREY);
             _data.hal->canvas()->drawCenterString("<no apps>", width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
-            _data.list_needs_update = false;
-            return true;
         }
-        auto sel = _item_at(_data.selected_file);
-
-        _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
-        _data.hal->canvas()->setTextColor(TFT_ORANGE);
-        std::string sizeInfo = sel.is_dir || (_data.source_type == source_cloud) ? ">>" : PartitionTable::formatSize(sel.size);
-        _data.hal->canvas()->drawString(std::format("{} / {} : {}", _data.selected_file + 1, total, sizeInfo).c_str(), 5, 16);
-        // Draw file list
-        int y_offset = 32;
-        int items_drawn = 0;
-        const int max_width = LIST_MAX_DISPLAY_CHARS * 8;
-
-        for (int i = _data.scroll_offset; i < total && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
+        else
         {
-            auto item = _item_at(i);
-            std::string display_name = item.name;
+            auto sel = _item_at(_data.selected_file);
 
-            if (item.is_dir)
-            {
-                display_name = "[" + display_name + "]";
-            }
-            if (_data.hal->canvas()->textWidth(display_name.c_str()) > max_width)
-            {
-                display_name = display_name.substr(0, LIST_MAX_DISPLAY_CHARS - 1) + ">";
-            }
+            _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
+            _data.hal->canvas()->setTextColor(TFT_ORANGE);
+            std::string sizeInfo =
+                sel.is_dir || (_data.source_type == source_cloud) ? ">>" : PartitionTable::formatSize(sel.size);
+            _data.hal->canvas()->drawString(std::format("{} / {} : {}", _data.selected_file + 1, total, sizeInfo).c_str(),
+                                            5,
+                                            16);
+            // Draw file list
+            int y_offset = 32;
+            int items_drawn = 0;
+            const int max_width = LIST_MAX_DISPLAY_CHARS * 8;
 
-            if (i == _data.selected_file)
+            for (int i = _data.scroll_offset; i < total && items_drawn < LIST_MAX_VISIBLE_ITEMS; i++)
             {
-                _data.hal->canvas()->fillRect(5, y_offset + 1, max_width + 25 + 5, 18, THEME_COLOR_BG_SELECTED);
-                _data.hal->canvas()->pushImage(11,
-                                               y_offset + 1 + 1,
-                                               16,
-                                               16,
-                                               item.is_dir ? image_data_folder_sel : image_data_rom_sel);
-                _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
-                _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
-            }
-            else
-            {
-                _data.hal->canvas()->pushImage(11, y_offset + 1 + 1, 16, 16, item.is_dir ? image_data_folder : image_data_rom);
-                _data.hal->canvas()->setTextColor(item.is_dir ? TFT_GREENYELLOW : TFT_WHITE);
-                _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
-            }
+                auto item = _item_at(i);
+                std::string display_name = item.name;
 
-            y_offset += 18 + 1;
-            items_drawn++;
+                if (item.is_dir)
+                {
+                    display_name = "[" + display_name + "]";
+                }
+                if (_data.hal->canvas()->textWidth(display_name.c_str()) > max_width)
+                {
+                    display_name = display_name.substr(0, LIST_MAX_DISPLAY_CHARS - 1) + ">";
+                }
+
+                if (i == _data.selected_file)
+                {
+                    _data.hal->canvas()->fillRect(5, y_offset + 1, max_width + 25 + 5, 18, THEME_COLOR_BG_SELECTED);
+                    _data.hal->canvas()->pushImage(11,
+                                                   y_offset + 1 + 1,
+                                                   16,
+                                                   16,
+                                                   item.is_dir ? image_data_folder_sel : image_data_rom_sel);
+                    _data.hal->canvas()->setTextColor(THEME_COLOR_SELECTED);
+                    _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
+                }
+                else
+                {
+                    _data.hal->canvas()->pushImage(11,
+                                                   y_offset + 1 + 1,
+                                                   16,
+                                                   16,
+                                                   item.is_dir ? image_data_folder : image_data_rom);
+                    _data.hal->canvas()->setTextColor(item.is_dir ? TFT_GREENYELLOW : TFT_WHITE);
+                    _data.hal->canvas()->drawString(display_name.c_str(), 30, y_offset + 1);
+                }
+
+                y_offset += 18 + 1;
+                items_drawn++;
+            }
+        }
+        // if there is only one item and not in root, means - parent folder. show no apps
+        if ((total == 1 && _data.current_path != "/"))
+        {
+            _data.hal->canvas()->setTextColor(TFT_DARKGREY);
+            _data.hal->canvas()->drawCenterString("<no apps>", width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
         }
 
         _render_scrollbar();

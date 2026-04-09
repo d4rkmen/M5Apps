@@ -101,7 +101,6 @@ namespace MOONCAKE
                 int selected_file = 0;
                 int selected_source = 0;
                 int scroll_offset = 0;
-                bool list_needs_update = true;
 
                 // Cloud JSON cache (lazy parsing: only visible items parsed on demand)
                 // Offset index: 8 bytes per item for O(1) access (vs ~200 bytes/item for FileItem_t)
