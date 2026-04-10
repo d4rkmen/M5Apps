@@ -3,5 +3,5 @@
 phy_init, data, phy,     0x9000,  0x1000,
 apps_nvs, data, nvs,     0xA000,  0x4000,
 apps_ota, data, ota,     0xE000,  0x2000,
-apps_app, app,  factory, 0x10000, 0x180000,
+apps_app, app,  factory, 0x10000, 0x170000,
 
