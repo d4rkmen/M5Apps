@@ -79,9 +79,19 @@ namespace UTILS
          *
          * @param hal HAL instance for drawing and input
          * @param title Dialog title
-         * @param items Vector of strings to display in the list
+         * @param items Array of C-string pointers (flash-friendly, no heap)
+         * @param item_count Number of items in the array
          * @param default_index Default selected index (or -1 for first item)
          * @return int Index of selected item, or -1 if canceled
+         */
+        int show_select_dialog(HAL::Hal* hal,
+                               const std::string& title,
+                               const char* const* items,
+                               size_t item_count,
+                               int default_index = 0);
+
+        /**
+         * @brief Convenience overload accepting a vector of strings
          */
         int show_select_dialog(HAL::Hal* hal,
                                const std::string& title,
