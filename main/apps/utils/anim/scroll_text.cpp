@@ -11,11 +11,51 @@
 #include "common_define.h"
 #include "../theme/theme_define.h"
 #include <string.h>
+#include "apps/utils/text/text_utils.h"
 
 namespace UTILS
 {
     namespace SCROLL_TEXT
     {
+        using UTILS::TEXT::utf8_char_len;
+
+        // UTF-8 helper: Find byte offset of first visible character
+        // Walks through text measuring character widths until we reach start_px
+        // Returns byte offset and sets out_pixel_offset to the pixel position of that character
+        static int utf8_find_start_offset(lgfx::LovyanGFX* canvas, const char* text, int start_px, int& out_pixel_offset)
+        {
+            const char* ptr = text;
+            int current_px = 0;
+            int byte_offset = 0;
+
+            while (*ptr)
+            {
+                int char_len = utf8_char_len((unsigned char)*ptr);
+                if (char_len == 0)
+                    break;
+
+                // Measure this character's width
+                char temp[5] = {0};
+                memcpy(temp, ptr, char_len);
+                int char_width = canvas->textWidth(temp);
+
+                // If this character extends past start_px, it's our first visible char
+                if (current_px + char_width > start_px)
+                {
+                    out_pixel_offset = current_px;
+                    return byte_offset;
+                }
+
+                current_px += char_width;
+                ptr += char_len;
+                byte_offset += char_len;
+            }
+
+            // Reached end of string
+            out_pixel_offset = current_px;
+            return byte_offset;
+        }
+
         bool scroll_text_init(
             ScrollTextContext_t* ctx, lgfx::LovyanGFX* canvas, int width, int height, uint32_t speed_ms, uint32_t pause_ms)
         {
@@ -46,6 +86,7 @@ namespace UTILS
 
             ctx->canvas = canvas;
             ctx->sprite->createSprite(width, height);
+            ctx->sprite->setEmojiCallback(canvas->getEmojiCallback());
             ctx->sprite->setFont(font);
             ctx->sprite->setTextSize(1);
 
@@ -135,19 +176,20 @@ namespace UTILS
                 // Update the sprite contents
                 ctx->sprite->fillScreen(bg_color);
                 ctx->sprite->setTextColor(fg_color, bg_color);
-                // Calculate visible portion of text to optimize rendering
-                const uint8_t char_width = ctx->sprite->textWidth("0");
-                int start_char = 0;
+
+                // Find first visible UTF-8 character (no memory allocation)
+                int pixel_offset = 0;
+                int byte_offset = 0;
                 if (ctx->scroll_pos < 0)
                 {
-                    // If scrolled left, find first visible character
-                    start_char = (-ctx->scroll_pos) / char_width;
+                    // Text is scrolled left, find first visible character
+                    byte_offset = utf8_find_start_offset(ctx->canvas, text, -ctx->scroll_pos, pixel_offset);
                 }
-                // Calculate how many characters fit in the visible area
-                int visible_chars = (ctx->width - ctx->scroll_pos) / char_width + 1;
-                // Extract visible substring and draw only that portion
-                std::string visible_text = std::string(text).substr(start_char, visible_chars);
-                ctx->sprite->drawString(visible_text.c_str(), ctx->scroll_pos + (start_char * char_width), 0);
+
+                // Draw from the first visible character - sprite clips the rest
+                int draw_x = ctx->scroll_pos + pixel_offset;
+                ctx->sprite->drawString(text + byte_offset, draw_x, 0);
+
                 // Push to canvas
                 ctx->sprite->pushSprite(ctx->canvas, x, y);
             }

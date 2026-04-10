@@ -11,17 +11,42 @@
 #include "common_define.h"
 #include "../theme/theme_define.h"
 #include <string.h>
+#include <algorithm>
+#include "apps/utils/text/text_utils.h"
 
 namespace UTILS
 {
     namespace HL_TEXT
     {
+        using UTILS::TEXT::utf8_char_len;
+
+        // Count UTF-8 characters in a string
+        static int utf8_strlen(const char* s)
+        {
+            int count = 0;
+            while (*s)
+            {
+                s += utf8_char_len((uint8_t)*s);
+                count++;
+            }
+            return count;
+        }
+
+        // Return byte offset of the Nth UTF-8 character (0-based).
+        // Returns byte length of the string if n >= char count.
+        static int utf8_byte_offset(const char* s, int n)
+        {
+            const char* p = s;
+            for (int i = 0; i < n && *p; i++)
+                p += utf8_char_len((uint8_t)*p);
+            return (int)(p - s);
+        }
+
         bool hl_text_init(HLTextContext_t* ctx, lgfx::LovyanGFX* canvas, uint32_t speed_ms, uint32_t delay_ms)
         {
             if (!ctx || !canvas)
                 return false;
 
-            // Initialize context
             ctx->sprite = new LGFX_Sprite(canvas);
             if (!ctx->sprite)
                 return false;
@@ -44,43 +69,51 @@ namespace UTILS
         {
             if (!ctx)
                 return false;
-            // Update animation state if needed
+
             uint32_t now = millis();
             bool updated = false;
+            int char_count = utf8_strlen(text);
 
             if (!ctx->is_rendered)
             {
-                // Draw the full text in normal color
                 ctx->sprite->fillScreen(bg_color);
                 ctx->sprite->setTextColor(normal_color, bg_color);
                 ctx->sprite->drawCenterString(text, ctx->sprite->width() / 2, 0);
 
-                // check if text length is less then current_char_index
-                if (ctx->current_char_index >= strlen(text))
+                if (ctx->current_char_index >= char_count)
                     ctx->current_char_index = -1;
-                // If there's a character to highlight
+
                 if (ctx->current_char_index >= 0)
                 {
-                    char highlighted_char[2] = {text[ctx->current_char_index], '\0'};
+                    int byte_off = utf8_byte_offset(text, ctx->current_char_index);
+                    int clen = utf8_char_len((uint8_t)text[byte_off]);
+
+                    // Extract the single UTF-8 character
+                    char highlighted_char[5] = {};
+                    memcpy(highlighted_char, text + byte_off, std::min(clen, 4));
+
                     ctx->sprite->setTextColor(highlight_color, bg_color);
-                    // Calculate position for the single character
-                    int char_width = ctx->sprite->textWidth(text);
-                    int start_x = ctx->sprite->width() / 2 - char_width / 2;
-                    int char_pos = ctx->current_char_index * ctx->sprite->textWidth("0");
+                    int total_width = ctx->sprite->textWidth(text);
+                    int start_x = ctx->sprite->width() / 2 - total_width / 2;
+
+                    // Measure prefix up to this character
+                    char prefix[256] = {};
+                    int prefix_len = std::min(byte_off, (int)sizeof(prefix) - 1);
+                    memcpy(prefix, text, prefix_len);
+                    prefix[prefix_len] = '\0';
+                    int char_pos = ctx->sprite->textWidth(prefix);
+
                     ctx->sprite->drawString(highlighted_char, start_x + char_pos, 0);
                 }
                 ctx->sprite->pushSprite(x, y, bg_color);
                 updated = true;
             }
 
-            // calculate next character index
             if (now - ctx->last_update_time > ctx->timeout)
             {
-
                 ctx->current_char_index++;
 
-                // If we've reached the end of the text, reset
-                if (text[ctx->current_char_index] == '\0')
+                if (ctx->current_char_index >= char_count)
                 {
                     ctx->current_char_index = -1;
                     ctx->timeout = ctx->animation_delay;
@@ -92,7 +125,6 @@ namespace UTILS
 
                 ctx->last_update_time = now;
                 ctx->is_rendered = false;
-                // push sprite to canvas
             }
 
             return updated;
