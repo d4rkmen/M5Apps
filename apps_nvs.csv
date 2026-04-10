@@ -9,6 +9,7 @@ dim_time,data,i32,30
 boot_sound,data,u8,1
 show_bat_volt,data,u8,1
 show_time,data,u8,1
+timezone,data,string,"GMT+2"
 last_app,data,u8,1
 last_app_to,data,i32,3
 installer,namespace,,
