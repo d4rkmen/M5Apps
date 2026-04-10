@@ -14,6 +14,7 @@
 #include "esp_rom_md5.h"
 #endif
 #include "esp_rom_crc.h"
+#include "esp_heap_caps.h"
 
 static const char* TAG = "PTABLE_TOOLS";
 
@@ -580,8 +581,9 @@ namespace UTILS
         {
             m_partitions.clear();
 
-            // Allocate buffer for the partition table
-            uint8_t* buffer = new uint8_t[ESP_PARTITION_TABLE_MAX_LEN];
+            // Must use MALLOC_CAP_INTERNAL to avoid cache-mapped memory (0x3C000000 region)
+            // which becomes inaccessible when esp_flash_read disables the SPI cache
+            uint8_t* buffer = (uint8_t*)heap_caps_malloc(ESP_PARTITION_TABLE_MAX_LEN, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
             if (!buffer)
             {
                 ESP_LOGE(TAG, "Failed to allocate memory for partition table buffer");
@@ -593,7 +595,7 @@ namespace UTILS
             if (err != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to read partition table from flash: %s", esp_err_to_name(err));
-                delete[] buffer;
+                free(buffer);
                 return false;
             }
 
@@ -604,7 +606,7 @@ namespace UTILS
             if (partitions[0].magic != ESP_PARTITION_MAGIC)
             {
                 ESP_LOGE(TAG, "Invalid partition table magic: 0x%x", partitions[0].magic);
-                delete[] buffer;
+                free(buffer);
                 return false;
             }
 
@@ -649,7 +651,7 @@ namespace UTILS
                 }
             }
 
-            delete[] buffer;
+            free(buffer);
 
             ESP_LOGD(TAG, "Read %zu partitions from flash (8MB flash size)", m_partitions.size());
             return true;
@@ -703,7 +705,7 @@ namespace UTILS
                 }
             }
 
-            uint8_t* buffer = new uint8_t[ESP_PARTITION_TABLE_MAX_LEN];
+            uint8_t* buffer = (uint8_t*)heap_caps_malloc(ESP_PARTITION_TABLE_MAX_LEN, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
             if (!buffer)
             {
                 ESP_LOGE(TAG, "Failed to allocate memory for partition table buffer");
@@ -731,14 +733,14 @@ namespace UTILS
             if (err != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to erase partition table sector: %s", esp_err_to_name(err));
-                delete[] buffer;
+                free(buffer);
                 return false;
             }
 
             // Write the partition table to flash
             err = bootloader_flash_write(ESP_PARTITION_TABLE_OFFSET, buffer, ESP_PARTITION_TABLE_MAX_LEN, false);
 
-            delete[] buffer;
+            free(buffer);
 
             if (err != ESP_OK)
             {

@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <vector>
 #include <format>
+#include "esp_heap_caps.h"
 
 // Filesystem headers
 // #include "esp_spiffs.h"
@@ -140,8 +141,7 @@ namespace UTILS
                      update_partition.address,
                      update_partition.size);
 
-            // Create a buffer for reading/writing
-            uint8_t* buffer = (uint8_t*)malloc(FLASH_BUFFER_SIZE);
+            uint8_t* buffer = (uint8_t*)heap_caps_malloc(FLASH_BUFFER_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
             if (buffer == NULL)
             {
                 fclose(f);

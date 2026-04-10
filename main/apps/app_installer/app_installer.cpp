@@ -22,6 +22,7 @@
 #include "../utils/ui/dialog.h"
 #include "../utils/ui/draw_helper.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "mjson.h"
 
 static const char* TAG = "APP_INSTALLER";
@@ -1776,7 +1777,7 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
     }
 
     ESP_LOGI(TAG, "Free heap before download buffers: %u", (uint32_t)esp_get_free_heap_size());
-    uint8_t* io_buffer = (uint8_t*)malloc(FILE_DOWNLOAD_BUFFER_SIZE);
+    uint8_t* io_buffer = (uint8_t*)heap_caps_malloc(FILE_DOWNLOAD_BUFFER_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!io_buffer)
     {
         _data.error_message = "No memory for download buffer";
