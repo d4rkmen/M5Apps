@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include "ascii_fonts.hpp"
+#include "ukr_fonts.hpp"
 
 #define THEME_COLOR_BG (uint32_t)(0x333333)
 #define THEME_COLOR_BG_DARK (uint32_t)(0x191919)
@@ -50,6 +50,7 @@
 #define THEME_COLOR_KB_OPT TFT_DARKGREEN
 
 #define THEME_COLOR_REPL_TEXT TFT_WHITE
-#define FONT_10 &efontEN_10
-#define FONT_12 &efontEN_12
-#define FONT_16 &efontEN_16
+#define FONT_10 &efontUK_10
+#define FONT_12 &efontUK_12
+#define FONT_14 &efontUK_14
+#define FONT_16 &efontUK_16
