@@ -1,5 +1,18 @@
 Install with M5Burner!
 
+v2.5
+
+- SNTP: Real-time clock sync over WiFi with configurable timezone (GMT-12 to GMT+14)
+- UI: Time display on the system bar
+- FLOOD: Traceroute — visual network diagnostic with hop count, signal strength and latency
+- FLOOD: Implicit ACK for transparent message delivery confirmation
+- FLOOD: Live device tracking (last_seen and signal strength updated on every packet)
+- FLOOD: Fixed crash on app close
+- UI: Skip rendering when display is off (power saving during screen dimming)
+- UI: Fixed keyboard rendering check when screen is dimmed
+- INSTALLER: Fixed "no apps" message not showing when list is empty
+- Updated to ESP-IDF v5.5.3
+
 v2.4
 
 - HAL: ES8311 audio codec driver for CardPuter ADV

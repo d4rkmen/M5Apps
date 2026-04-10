@@ -33,7 +33,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
    ![FDISK](pics/fdisk.png)
 5. **Finder** - Two-panel file manager for SD card and USB drive
    ![Finder](pics/finder.png)
-6. **Flood** - Advanced mesh chat application with channels and history using ESP-NOW
+6. **Flood** - Advanced mesh chat application with channels, history, and traceroute using ESP-NOW
    ![Flood](pics/flood.png)
    UI hints for Flood app:
    ![Flood Hint](pics/flood_hint.png)
@@ -45,6 +45,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 - **SD Card Support**: Full SD card file system access (FAT32, exFAT)
 - **Screenshot Capability**: Capture screenshots with CTRL + SPACE key combination
 - **LED Indicators**: System event notifications (WiFi heartbeat, etc.)
+- **SNTP Time Sync**: Automatic clock synchronization over WiFi with configurable timezone
 - **Screen Dimming**: Automatic screen dimming with timeout
 - **Boot Sound & Logo**: Customizable boot experience
 - **Keyboard Navigation**: Full keyboard support with improved navigation
@@ -61,7 +62,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 
 ### Development Environment
 
-- **ESP-IDF**: v5.5.2
+- **ESP-IDF**: v5.5.3
 - **PATCH** required to enable exFAT filesystem support in ESP-IDF components:
   `esp-idf\components\fatfs\src\ffconf.h`
 
@@ -89,7 +90,7 @@ M5Apps is a full-featured firmware bundle that transforms your M5 CardPuter into
 
 ### Prerequisites
 
-Install ESP-IDF following the [official guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.2/esp32s3/get-started/)
+Install ESP-IDF following the [official guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32s3/get-started/)
 
 ### Build Steps
 
