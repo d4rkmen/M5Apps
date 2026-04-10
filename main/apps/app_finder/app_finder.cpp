@@ -34,7 +34,6 @@ static const char* TAG = "APP_FINDER";
 
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
-// static const char* HINT_PANELS = "[TAB] [UP] [DOWN] [ENTER] [HOME]";
 static const char* HINT_PANELS = "[5]COPY [6]MOVE [7]MD [8]DEL [TAB] [ESC]";
 
 using namespace MOONCAKE::APPS;

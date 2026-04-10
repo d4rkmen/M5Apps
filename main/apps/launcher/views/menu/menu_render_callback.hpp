@@ -164,7 +164,7 @@ public:
         // Draw controls hint
         // Render highlight text animation at the bottom of the screen
         hl_text_render(&_hint_text_ctx,
-                       "[I]NFO [<] SELECT [>] [ENTER]",
+                       "[I]NFO [\u2190] SELECT [\u2192] [ENTER]",
                        0,
                        _hal->canvas()->height() - 12,
                        TFT_DARKGREY,    // normal color

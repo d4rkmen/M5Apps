@@ -8,7 +8,7 @@
 
 static const char* TAG = "APP_FDISK";
 static const char* HINT_PARTITIONS = "[A]DD [R]ENAME [I]NFO [DEL] [ESC] [ENTER]";
-static const char* HINT_HEX_VIEW = "[UP][DOWN] [<][>] [ENTER] [DEL] [ESC]";
+static const char* HINT_HEX_VIEW = "[\u2191][\u2193][\u2190][\u2192] [ENTER] [DEL] [ESC]";
 
 #include "apps/utils/ui/key_repeat.h"
 static bool is_repeat = false;

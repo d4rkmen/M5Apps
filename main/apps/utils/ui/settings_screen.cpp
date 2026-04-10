@@ -11,7 +11,7 @@
 #include "common_define.h"
 
 static const char* TAG = "SETTINGS_SCREEN";
-static const char* HINT_ITEMS = "[UP][DOWN] [LEFT][RIGHT] [ESC] [ENTER]";
+static const char* HINT_ITEMS = "[\u2191][\u2193][\u2190][\u2192] [ESC] [ENTER]";
 static const char* HINT_GROUPS = HINT_ITEMS;
 
 #include "key_repeat.h"

@@ -30,12 +30,12 @@ using namespace MOONCAKE::APPS;
 static const char* TAG = "APP_FLOOD";
 static const char* FLOOD_CONTEXT_PATH = "/sdcard/flood";
 
-static const char* HINT_DEVICES = "[Fn] [^][v] [<][>] [C][S][T] [ENTER][DEL] [ESC]";
-static const char* HINT_DEVICES_FN = "[UP] [DOWN]";
-static const char* HINT_CHAT = "[Fn] [^][v] [<][>] [ENTER][DEL] [ESC]";
-static const char* HINT_CHAT_FN = "[UP] [DOWN] [<] [>]";
-static const char* HINT_TRACE = "[^][v] [<][>] [ENTER] [T]RACE [ESC]";
-static const char* HINT_TRACE_DETAIL = "[^][v] [<][>] [ESC]";
+static const char* HINT_DEVICES = "[Fn] [\u2191][\u2193][\u2190][\u2192] [C][S][T] [ENTER][DEL] [ESC]";
+static const char* HINT_DEVICES_FN = "[\u2191] [\u2193]";
+static const char* HINT_CHAT = "[Fn] [\u2191][\u2193][\u2190][\u2192] [ENTER][DEL] [ESC]";
+static const char* HINT_CHAT_FN = "[\u2191][\u2193][\u2190][\u2192]";
+static const char* HINT_TRACE = "[\u2191][\u2193][\u2190][\u2192] [ENTER] [T]RACE [ESC]";
+static const char* HINT_TRACE_DETAIL = "[\u2191][\u2193][\u2190][\u2192] [ESC]";
 
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
