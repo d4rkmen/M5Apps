@@ -137,12 +137,24 @@ namespace MOONCAKE
                 // base url to download firmware
                 std::string current_base_url;
                 std::string error_message;
+
+                // Search / filter state
+                std::string filter_query;         // active search query, empty = no filter
+                std::vector<uint16_t> filter_idx; // display index -> raw index
+                std::string path_display;         // cached "path [query]" for the path scroller
             };
             Data_t _data;
             const FileItem_t BACK_DIR_ITEM = {"..", true, 0, "", ""};
             void _clear_file_list();
             int _item_count();
             FileItem_t _item_at(int index);
+            int _raw_item_count();
+            FileItem_t _raw_item_at(int index);
+            std::string _raw_item_name(int index);
+            bool _at_source_root();
+            void _apply_filter();
+            void _clear_filter();
+            void _update_path_display();
             void _free_cloud_cache();
             // Helper methods
             bool _has_extension(const std::string& filename, const std::string& ext);

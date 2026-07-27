@@ -39,6 +39,7 @@ static const char* TAG = "APP_INSTALLER";
 #define DESC_SCROLL_PAUSE 1000
 #define DESC_SCROLL_SPEED 20
 #define DESC_MAX_DISPLAY_CHARS 19
+#define SEARCH_MAX_LENGTH 24
 #define WIFI_CONNECT_TIMEOUT_MS 10000
 #define HTTP_RESPONSE_BUFFER_SIZE (16 * 1024)
 #define FILE_DOWNLOAD_BUFFER_SIZE FLASH_BUFFER_SIZE
@@ -293,6 +294,7 @@ void AppInstaller::_clear_file_list()
 {
     _data.dir_list.clear();
     _free_cloud_cache();
+    _clear_filter();
 }
 
 void AppInstaller::_free_cloud_cache()
@@ -309,13 +311,16 @@ void AppInstaller::_free_cloud_cache()
     _data.cloud_has_back = false;
 }
 
-int AppInstaller::_item_count()
+bool AppInstaller::_at_source_root() { return _data.current_path.find('/', 1) == std::string::npos; }
+
+int AppInstaller::_raw_item_count()
 {
     if (_data.source_type == source_cloud && _data.cloud_json)
         return (_data.cloud_has_back ? 1 : 0) + _data.cloud_col_count + _data.cloud_app_count;
-    bool has_back = _data.current_path.find('/', 1) != std::string::npos;
-    return (has_back ? 1 : 0) + _data.dir_list.count();
+    return (_at_source_root() ? 0 : 1) + _data.dir_list.count();
 }
+
+int AppInstaller::_item_count() { return _data.filter_query.empty() ? _raw_item_count() : (int)_data.filter_idx.size(); }
 
 static std::string _json_str_view(const char* buf, int len, const char* path, int max_len = 0)
 {
@@ -331,9 +336,23 @@ static std::string _json_str_view(const char* buf, int len, const char* path, in
 
 AppInstaller::FileItem_t AppInstaller::_item_at(int index)
 {
+    if (_data.filter_query.empty())
+        return _raw_item_at(index);
+    if (index < 0 || index >= (int)_data.filter_idx.size())
+        return {"?", false, 0, "", ""};
+    return _raw_item_at(_data.filter_idx[index]);
+}
+
+AppInstaller::FileItem_t AppInstaller::_raw_item_at(int index)
+{
+    // An empty folder has no backing storage at all, so bounds check before
+    // touching dir_list / cloud_idx
+    if (index < 0 || index >= _raw_item_count())
+        return {"?", false, 0, "", ""};
+
     if (_data.source_type != source_cloud || !_data.cloud_json)
     {
-        bool has_back = _data.current_path.find('/', 1) != std::string::npos;
+        bool has_back = !_at_source_root();
         if (has_back && index == 0)
             return BACK_DIR_ITEM;
         int adj = has_back ? index - 1 : index;
@@ -376,6 +395,95 @@ AppInstaller::FileItem_t AppInstaller::_item_at(int index)
         return {std::move(name), false, (uint64_t)size_val, std::move(fname), std::move(desc)};
     }
     return {"?", false, 0, "", ""};
+}
+
+std::string AppInstaller::_raw_item_name(int index)
+{
+    if (_data.source_type != source_cloud || !_data.cloud_json)
+    {
+        bool has_back = !_at_source_root();
+        if (has_back && index == 0)
+            return "..";
+        int adj = has_back ? index - 1 : index;
+        auto entry = _data.dir_list.at(adj);
+        if (entry.is_dir)
+            return std::string(entry.name);
+        std::string fname(entry.name);
+        auto dot = fname.find_last_of('.');
+        return dot == std::string::npos ? fname : fname.substr(0, dot);
+    }
+
+    if (_data.cloud_has_back && index == 0)
+        return "..";
+
+    int adj = _data.cloud_has_back ? index - 1 : index;
+    if (adj < _data.cloud_col_count)
+    {
+        auto& s = _data.cloud_idx[adj];
+        return _json_str_view(_data.cloud_col_tok + s.off, s.len, "$.n");
+    }
+    adj -= _data.cloud_col_count;
+    if (adj < _data.cloud_app_count)
+    {
+        auto& s = _data.cloud_idx[_data.cloud_col_count + adj];
+        return _json_str_view(_data.cloud_app_tok + s.off, s.len, "$.n");
+    }
+    return {};
+}
+
+static std::string _to_lower_ascii(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s)
+        out.push_back((char)std::tolower((unsigned char)c));
+    return out;
+}
+
+void AppInstaller::_update_path_display()
+{
+    if (_data.filter_query.empty())
+        _data.path_display = _data.current_path;
+    else
+        _data.path_display = _data.current_path + " [" + _data.filter_query + "]";
+}
+
+void AppInstaller::_apply_filter()
+{
+    _data.filter_idx.clear();
+    _data.selected_file = 0;
+    _data.scroll_offset = 0;
+    _update_path_display();
+    if (_data.filter_query.empty())
+        return;
+
+    std::string needle = _to_lower_ascii(_data.filter_query);
+    int total = _raw_item_count();
+    _data.filter_idx.reserve((size_t)total);
+    int back_index = -1;
+    for (int i = 0; i < total; i++)
+    {
+        std::string name = _raw_item_name(i);
+        if (name == "..")
+        {
+            back_index = i;
+            continue;
+        }
+        if (_to_lower_ascii(name).find(needle) != std::string::npos)
+            _data.filter_idx.push_back((uint16_t)i);
+    }
+    // Keep the parent entry only when something matched
+    if (back_index >= 0 && !_data.filter_idx.empty())
+        _data.filter_idx.insert(_data.filter_idx.begin(), (uint16_t)back_index);
+}
+
+void AppInstaller::_clear_filter()
+{
+    _data.filter_query.clear();
+    _data.filter_idx.clear();
+    _data.selected_file = 0;
+    _data.scroll_offset = 0;
+    _update_path_display();
 }
 
 void AppInstaller::_handle_source_selection()
@@ -688,6 +796,8 @@ bool AppInstaller::_render_file_list()
 {
     int width = _data.hal->canvas()->width();
     int height = _data.hal->canvas()->height();
+    _data.hal->canvas()->setFont(FONT_16);
+    _data.hal->canvas()->setTextSize(1);
     _data.hal->canvas()->fillRect(0, 32, width, height - 32, THEME_COLOR_BG);
 
     // Add SD card info if mounted
@@ -697,16 +807,19 @@ bool AppInstaller::_render_file_list()
     {
 
         int total = _item_count();
+        // Clear counter strip regardless of whether the list is empty so any
+        // previous "N / M : ..." text is erased when a filter yields no match.
+        _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
+        const char* empty_msg = _data.filter_query.empty() ? "<no apps>" : "<no filter match>";
         if (total == 0)
         {
             _data.hal->canvas()->setTextColor(TFT_DARKGREY);
-            _data.hal->canvas()->drawCenterString("<no apps>", width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
+            _data.hal->canvas()->drawCenterString(empty_msg, width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
         }
         else
         {
             auto sel = _item_at(_data.selected_file);
 
-            _data.hal->canvas()->fillRect(0, 16, width - 8 * 8 - 1, 16, THEME_COLOR_BG);
             _data.hal->canvas()->setTextColor(TFT_ORANGE);
             std::string sizeInfo =
                 sel.is_dir || (_data.source_type == source_cloud) ? ">>" : PartitionTable::formatSize(sel.size);
@@ -758,11 +871,11 @@ bool AppInstaller::_render_file_list()
                 items_drawn++;
             }
         }
-        // if there is only one item and not in root, means - parent folder. show no apps
-        if ((total == 1 && _data.current_path != "/"))
+        // If the only entry is the parent-folder ".." link, treat the folder as empty
+        if (total == 1 && _item_at(0).name == "..")
         {
             _data.hal->canvas()->setTextColor(TFT_DARKGREY);
-            _data.hal->canvas()->drawCenterString("<no apps>", width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
+            _data.hal->canvas()->drawCenterString(empty_msg, width / 2, 32 + (LIST_MAX_VISIBLE_ITEMS / 2) * 20);
         }
 
         _render_scrollbar();
@@ -812,11 +925,6 @@ bool AppInstaller::_render_scrollbar()
 bool AppInstaller::_handle_file_selection()
 {
     int total = _item_count();
-    if (total == 0)
-    {
-        return false;
-    }
-
     bool selection_changed = false;
 
     _data.hal->keyboard()->updateKeyList();
@@ -902,7 +1010,7 @@ bool AppInstaller::_handle_file_selection()
             }
         }
         // Enter
-        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER))
+        else if (total > 0 && _data.hal->keyboard()->isKeyPressing(KEY_NUM_ENTER))
         {
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ENTER);
@@ -963,14 +1071,44 @@ bool AppInstaller::_handle_file_selection()
             }
             selection_changed = true;
         }
+        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_TAB))
+        {
+            _data.hal->playNextSound();
+            _data.hal->keyboard()->waitForRelease(KEY_NUM_TAB);
+
+            std::string query = _data.filter_query;
+            if (UTILS::UI::show_edit_string_dialog(_data.hal, "Filter string", query, false, SEARCH_MAX_LENGTH))
+            {
+                _data.filter_query = query;
+                _apply_filter();
+            }
+            // restore canvas font and text size
+            _data.hal->canvas()->setFont(FONT_16);
+            _data.hal->canvas()->setTextSize(1);
+            // dialog painted over everything - force full redraw
+            _clear_screen();
+            _data.update_cloud_info = true;
+            _data.update_sdcard_info = true;
+            _data.update_usb_info = true;
+            scroll_text_reset(&_data.path_scroll_ctx);
+            scroll_text_reset(&_data.desc_scroll_ctx);
+            selection_changed = true;
+        }
         // Backspace
         else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_BACKSPACE))
         {
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_BACKSPACE);
 
+            // If a filter is active, clear it first instead of navigating out
+            if (!_data.filter_query.empty())
+            {
+                _clear_filter();
+                scroll_text_reset(&_data.path_scroll_ctx);
+                selection_changed = true;
+            }
             // jump parent folder if not in root
-            if (_data.current_path.find('/', 1) != std::string::npos)
+            else if (!_at_source_root())
             {
                 _navigate_directory(_data.current_path.substr(0, _data.current_path.find_last_of('/')));
                 selection_changed = true;
@@ -997,19 +1135,29 @@ bool AppInstaller::_handle_file_selection()
             _data.hal->playNextSound();
             _data.hal->keyboard()->waitForRelease(KEY_NUM_ESC);
 
-            switch (_data.source_type)
+            // If a filter is active, clear it first instead of leaving the source
+            if (!_data.filter_query.empty())
             {
-            case source_sdcard:
-                _unmount_sdcard();
-                break;
-            case source_usb:
-                _unmount_usb();
-                break;
-            case source_cloud:
-                _data.cloud_initialized = false;
-                break;
+                _clear_filter();
+                scroll_text_reset(&_data.path_scroll_ctx);
+                selection_changed = true;
             }
-            _data.state = state_source;
+            else
+            {
+                switch (_data.source_type)
+                {
+                case source_sdcard:
+                    _unmount_sdcard();
+                    break;
+                case source_usb:
+                    _unmount_usb();
+                    break;
+                case source_cloud:
+                    _data.cloud_initialized = false;
+                    break;
+                }
+                _data.state = state_source;
+            }
         }
 
     } // isPressed
@@ -1051,6 +1199,8 @@ void AppInstaller::_navigate_directory(const std::string& path)
 
     _data.selected_file = 0;
     _data.scroll_offset = 0;
+    // Any navigation drops the search filter
+    _clear_filter();
 
     scroll_text_reset(&_data.path_scroll_ctx);
     scroll_text_reset(&_data.desc_scroll_ctx);
@@ -1180,9 +1330,10 @@ bool AppInstaller::_render_scrolling_list()
 
 bool AppInstaller::_render_scrolling_path()
 {
-    // Only update the canvas if the text scrolled
+    // path_display holds current_path or "current_path [query]"
+    const char* text = _data.path_display.empty() ? _data.current_path.c_str() : _data.path_display.c_str();
     return scroll_text_render(&_data.path_scroll_ctx,
-                              _data.current_path.c_str(),
+                              text,
                               5,                                        // x position
                               0,                                        // y position
                               lgfx::v1::convert_to_rgb888(TFT_SKYBLUE), // text color
