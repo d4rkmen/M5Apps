@@ -49,7 +49,7 @@ static const char* TAG = "APP_INSTALLER";
 static bool is_repeat = false;
 static uint32_t next_fire_ts = 0xFFFFFFFF;
 static const char* CLOUD_API_URL = "http://m5apps.hexlook.com/api";
-static const char* HINT_SOURCES = "[LEFT] [RIGHT] [ENTER] [HOME]";
+static const char* HINT_SOURCES = "[\u2191][\u2193][\u2190][\u2192] [ENTER] [HOME]";
 
 using namespace MOONCAKE::APPS;
 using namespace UTILS::FLASH_TOOLS;
@@ -503,7 +503,7 @@ void AppInstaller::_handle_source_selection()
     {
         uint32_t now = millis();
 
-        if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN))
+        if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_DOWN)||_data.hal->keyboard()->isKeyPressing(KEY_NUM_RIGHT))
         {
             if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
@@ -514,7 +514,7 @@ void AppInstaller::_handle_source_selection()
                 selection_changed = true;
             }
         }
-        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP))
+        else if (_data.hal->keyboard()->isKeyPressing(KEY_NUM_UP)||_data.hal->keyboard()->isKeyPressing(KEY_NUM_LEFT))
         {
             if (key_repeat_check(is_repeat, next_fire_ts, now))
             {
