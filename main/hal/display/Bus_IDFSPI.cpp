@@ -549,7 +549,6 @@ namespace lgfx
         {
             // Use queued color transfer for raw byte data
             uint32_t count = 0;
-            uint32_t total = length;
             do
             {
                 uint32_t chunk = std::min(length, _spi_trans_max_bytes);
@@ -559,7 +558,6 @@ namespace lgfx
                 length -= chunk;
                 count++;
             } while (length > 0);
-            // ESP_LOGD(TAG, "writeBytes: %d, chunks: %d", total, count);
         }
 
         uint8_t* Bus_IDFSPI::getDMABuffer(uint32_t length)
