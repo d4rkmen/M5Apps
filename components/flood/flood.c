@@ -121,7 +121,6 @@ static esp_err_t flood_process_packet(const uint8_t* data, uint16_t length, cons
 static esp_err_t flood_forward_packet(const uint8_t* data, uint16_t length);
 static esp_err_t flood_process_trace_request(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi);
 static esp_err_t flood_process_trace_reply(const uint8_t* data, uint16_t length, const uint8_t* src_mac, int8_t rssi);
-static bool flood_is_broadcast_mac(const uint8_t* mac);
 static bool flood_is_our_mac(const uint8_t* mac);
 static uint32_t flood_get_timestamp(void);
 static esp_err_t flood_add_device_internal(const mesh_device_info_t* device);
@@ -185,30 +184,6 @@ static esp_err_t flood_save_message_to_file_internal(const char* messages_file_p
 static void mac_to_string(const uint8_t* mac, char* str, size_t len)
 {
     snprintf(str, len, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-}
-
-static esp_err_t string_to_mac(const char* str, uint8_t* mac)
-{
-    if (str == NULL || mac == NULL || strlen(str) != 12)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    for (int i = 0; i < 6; i++)
-    {
-        char hex_str[3] = {str[i * 2], str[i * 2 + 1], '\0'};
-        char* endptr;
-        unsigned long val = strtoul(hex_str, &endptr, 16);
-
-        if (endptr != hex_str + 2 || val > 255)
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-
-        mac[i] = (uint8_t)val;
-    }
-
-    return ESP_OK;
 }
 
 /* Path utilities */
@@ -1145,8 +1120,6 @@ static esp_err_t flood_forward_packet(const uint8_t* data, uint16_t length)
 
     return ESP_OK;
 }
-
-static bool flood_is_broadcast_mac(const uint8_t* mac) { return memcmp(mac, s_broadcast_mac, ESP_NOW_ETH_ALEN) == 0; }
 
 static bool flood_is_our_mac(const uint8_t* mac) { return memcmp(mac, s_our_mac, 6) == 0; }
 
@@ -3994,6 +3967,11 @@ static esp_err_t flood_waiting_ack_implicit(uint32_t sequence)
         if (header->sequence == sequence)
         {
             int32_t message_id = -1;
+            // header points into current->packet, which is freed below - keep a copy
+            // of the address for the status callback
+            uint8_t dest_mac[ESP_NOW_ETH_ALEN];
+            memcpy(dest_mac, header->dest_mac, ESP_NOW_ETH_ALEN);
+
             if (header->type == MESH_PACKET_TYPE_MESSAGE)
             {
                 mesh_message_packet_t* msg = (mesh_message_packet_t*)current->packet;
@@ -4030,7 +4008,7 @@ static esp_err_t flood_waiting_ack_implicit(uint32_t sequence)
             if (s_message_status_callback != NULL)
             {
                 s_message_status_callback(
-                    header->dest_mac, message_id, MESSAGE_STATUS_DELIVERED, s_message_status_callback_user_data);
+                    dest_mac, message_id, MESSAGE_STATUS_DELIVERED, s_message_status_callback_user_data);
             }
 
             xSemaphoreGive(s_flood_mutex);
