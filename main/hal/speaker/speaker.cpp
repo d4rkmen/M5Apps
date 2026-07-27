@@ -552,11 +552,17 @@ namespace HAL
                     {
                         ch_info->index -= ch_info->wav()->length;
                         // not infinite repeat? decrement and check if repeat count is 0
-                        if (ch_info->wav()->repeat != ~0u && --ch_info->wav()->repeat == 0)
+                        // -- is deprecated on volatile types)
+                        uint32_t repeat = ch_info->wav()->repeat;
+                        if (repeat != ~0u)
                         {
-                            // Save state before switching
-                            if (!_get_next_wav(ch))
-                                goto no_more_samples;
+                            ch_info->wav()->repeat = --repeat;
+                            if (repeat == 0)
+                            {
+                                // Save state before switching
+                                if (!_get_next_wav(ch))
+                                    goto no_more_samples;
+                            }
                         }
                     }
 
