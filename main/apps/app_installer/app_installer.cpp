@@ -16,6 +16,7 @@
 #include "../utils/theme/theme_define.h"
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -1869,14 +1870,11 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
         bool mounted_sd = false;
         bool mounted_usb = false;
         bool keep = false;
+        bool failed = false;
+        size_t written = 0;
         ~SaveFile()
         {
-            if (f)
-            {
-                fclose(f);
-                if (!keep)
-                    unlink(path.c_str());
-            }
+            close();
             if (mounted_sd)
                 hal->sdcard()->eject();
             if (mounted_usb)
@@ -1884,8 +1882,33 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
         }
         void write(const void* data, size_t len)
         {
-            if (f)
-                fwrite(data, 1, len, f);
+            if (!f || failed || !len)
+                return;
+            if (fwrite(data, 1, len, f) != len)
+            {
+                ESP_LOGE(TAG, "Failed to write download copy: %s", path.c_str());
+                failed = true;
+                return;
+            }
+            written += len;
+        }
+        void close()
+        {
+            if (!f)
+                return;
+            // Push data and the directory entry to the media before anything can reboot the device
+            if (fflush(f) != 0 || fsync(fileno(f)) != 0)
+            {
+                ESP_LOGW(TAG, "Failed to flush download copy: %s", path.c_str());
+            }
+            if (fclose(f) != 0)
+            {
+                ESP_LOGE(TAG, "Failed to close download copy: %s", path.c_str());
+                failed = true;
+            }
+            f = nullptr;
+            if (failed || !keep)
+                unlink(path.c_str());
         }
     } save_file;
 
@@ -1898,6 +1921,8 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
         {
             if (_data.hal->sdcard()->mount(false))
                 save_file.mounted_sd = true;
+            else
+                ESP_LOGW(TAG, "SD card not mounted, download will not be saved");
         }
         else if (dl_path.starts_with("/usb") && !_data.hal->usb()->is_mounted())
         {
@@ -1910,6 +1935,15 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
         {
             size_t slash = url.find_last_of('/');
             fname = (slash != std::string::npos) ? url.substr(slash + 1) : "app.bin";
+        }
+        // Keep the name valid on FAT32
+        for (auto& c : fname)
+        {
+            if (c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' ||
+                (unsigned char)c < 0x20)
+            {
+                c = '_';
+            }
         }
         if (!_has_extension(fname, ".bin"))
             fname += ".bin";
@@ -2484,7 +2518,24 @@ bool AppInstaller::_download_cloud_file(const std::string& url, const std::strin
         }
     }
 
-    save_file.keep = true;
+    // Finalize the downloaded copy on disk before the completion dialog can reboot the device.
+    // Keep it unless the "Delete temp file" setting is enabled.
+    if (save_file.f)
+    {
+        if (save_file.written != file_size)
+        {
+            ESP_LOGE(TAG,
+                     "Download copy is incomplete (%u / %u bytes), discarding",
+                     (uint32_t)save_file.written,
+                     (uint32_t)file_size);
+            save_file.failed = true;
+        }
+        save_file.keep = !_data.hal->settings()->getBool("installer", "auto_delete");
+        save_file.close();
+        if (save_file.keep)
+            ESP_LOGI(TAG, "Firmware copy saved to %s", save_file.path.c_str());
+    }
+
     _installation_progress_callback(100, std::format("Done: {} sec", (uint32_t)((millis() - start_time) / 1000)).c_str(), this);
     delay(2000);
     _handle_installation_complete();

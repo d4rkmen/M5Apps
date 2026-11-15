@@ -144,7 +144,7 @@ namespace SETTINGS
                                   "/sdcard/downloads",
                                   "",
                                   "",
-                                  "Path to store temp files downloaded from the internet"}};
+                                  "Folder to save firmware downloaded from the internet"}};
         SettingGroup_t flood_group;
         flood_group.name = "Flood settings";
         flood_group.nvs_namespace = "flood";
