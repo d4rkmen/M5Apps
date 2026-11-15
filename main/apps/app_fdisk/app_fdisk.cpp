@@ -513,6 +513,13 @@ void AppFdisk::_delete_partition()
         _data.state = state_error;
         return;
     }
+
+    // The deleted partition may have been the bootable app (or the OTA subtypes were renumbered),
+    // so point the bootloader back to the apps (factory) partition for the next boot
+    if (!_data.ptable.setBootToFactory())
+    {
+        ESP_LOGW(TAG, "Failed to reset boot partition to apps");
+    }
     delay(500);
     // Show completion message
     // reboot if partition type is app

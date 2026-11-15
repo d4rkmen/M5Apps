@@ -373,6 +373,49 @@ namespace UTILS
             return true;
         }
 
+        bool PartitionTable::setBootToFactory()
+        {
+            const esp_partition_info_t* otadata = nullptr;
+            bool has_factory_app = false;
+            for (const auto& partition : m_partitions)
+            {
+                if (partition.type == ESP_PARTITION_TYPE_DATA && partition.subtype == ESP_PARTITION_SUBTYPE_DATA_OTA)
+                {
+                    otadata = &partition;
+                }
+                else if (partition.type == ESP_PARTITION_TYPE_APP &&
+                         partition.subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY)
+                {
+                    has_factory_app = true;
+                }
+            }
+            if (!has_factory_app)
+            {
+                ESP_LOGW(TAG, "Factory app partition not found, keeping current boot partition");
+                return false;
+            }
+            if (otadata == nullptr)
+            {
+                ESP_LOGW(TAG, "OTA data partition not found, cannot reset boot partition");
+                return false;
+            }
+
+            // Erasing both OTA select entries makes the bootloader fall back to the factory app
+            const uint32_t start_sector = otadata->pos.offset / SPI_FLASH_SEC_SIZE;
+            const uint32_t sector_count = otadata->pos.size / SPI_FLASH_SEC_SIZE;
+            for (uint32_t i = 0; i < sector_count; i++)
+            {
+                esp_err_t err = bootloader_flash_erase_sector(start_sector + i);
+                if (err != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Failed to erase OTA data sector %lu: %s", (uint32_t)i, esp_err_to_name(err));
+                    return false;
+                }
+            }
+            ESP_LOGI(TAG, "OTA data erased, next boot will run the factory app partition");
+            return true;
+        }
+
         bool PartitionTable::makeDefaultPartitions()
         {
             // Clear current partitions

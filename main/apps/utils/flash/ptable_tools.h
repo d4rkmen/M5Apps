@@ -82,6 +82,9 @@ namespace UTILS
             // Create and set default partition table
             bool makeDefaultPartitions();
 
+            // Invalidate OTA data so the bootloader falls back to the factory (apps) app partition
+            bool setBootToFactory();
+
             // Check if the current partition table is valid
             bool isValid() const;
 
