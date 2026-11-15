@@ -114,7 +114,7 @@ namespace UTILS
             // If text fits in the area and we're not forcing scroll, just render it statically
             if (text_width <= ctx->width)
             {
-                if (ctx->scroll_direction)
+                if (ctx->scroll_direction || force)
                 {
                     ctx->sprite->fillScreen(bg_color);
                     // Static display - text fits in area
