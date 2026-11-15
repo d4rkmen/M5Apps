@@ -105,11 +105,13 @@ namespace UTILS
             int selected_button = 0;
             uint32_t start_time = millis();
             bool title_fits = hal->canvas()->textWidth(title.c_str()) <= DIALOG_WIDTH - 20;
-            bool message_fits = hal->canvas()->textWidth(message.c_str()) <= DIALOG_WIDTH - 20;
+            std::string initial_message =
+                close_timeout_ms > 0 ? std::format("{} {} sec", message, close_timeout_ms / 1000) : message;
+            bool message_fits = hal->canvas()->textWidth(initial_message.c_str()) <= DIALOG_WIDTH - 20;
             if (title_fits)
             {
                 // draw title
-                hal->canvas()->setTextColor(title_color);
+                hal->canvas()->setTextColor(title_color, THEME_COLOR_BG);
                 hal->canvas()->drawCenterString(title.c_str(), dialog_x + DIALOG_WIDTH / 2, dialog_y + 10);
             }
             else
@@ -123,9 +125,12 @@ namespace UTILS
             }
             if (message_fits)
             {
-                // draw message
-                hal->canvas()->setTextColor(message_color);
-                hal->canvas()->drawCenterString(message.c_str(), dialog_x + DIALOG_WIDTH / 2, dialog_y + 10 + VERTICAL_SPACING);
+                if (close_timeout_ms == 0)
+                {
+                    // draw message
+                    hal->canvas()->setTextColor(message_color, THEME_COLOR_BG);
+                    hal->canvas()->drawCenterString(message.c_str(), dialog_x + DIALOG_WIDTH / 2, dialog_y + 10 + VERTICAL_SPACING);
+                }
             }
             else
             {
@@ -137,15 +142,16 @@ namespace UTILS
                                               scroll_speed,
                                               scroll_pause_ms);
             }
-            // show canles hint
+            // show cancel hint
             if (close_timeout_ms > 0)
             {
                 hal->canvas()->setFont(FONT_10);
-                hal->canvas()->setTextColor(TFT_DARKGREY);
+                hal->canvas()->setTextColor(TFT_DARKGREY, THEME_COLOR_BG);
                 hal->canvas()->drawCenterString("[DEL] CANCEL", dialog_x + DIALOG_WIDTH / 2, dialog_y + DIALOG_HEIGHT - 10);
                 hal->canvas()->setFont(FONT_16);
             }
             bool need_update = true;
+            uint32_t last_remaining_sec = 0xFFFFFFFF;
             is_repeat = false;
             next_fire_ts = 0xFFFFFFFF;
             while (true)
@@ -154,10 +160,25 @@ namespace UTILS
                 uint32_t now = millis();
                 if (close_timeout_ms > 0 && (now - start_time >= close_timeout_ms))
                 {
+                    if (!title_fits)
+                    {
+                        SCROLL_TEXT::scroll_text_free(&title_scroll_ctx);
+                    }
+                    if (!message_fits)
+                    {
+                        SCROLL_TEXT::scroll_text_free(&message_scroll_ctx);
+                    }
                     return selected_button;
                 }
 
-                // check it title fits
+                uint32_t remaining_sec = close_timeout_ms > 0 ? (close_timeout_ms - (now - start_time)) / 1000 : 0;
+                bool sec_changed = (close_timeout_ms > 0) && (remaining_sec != last_remaining_sec);
+                if (sec_changed)
+                {
+                    last_remaining_sec = remaining_sec;
+                }
+
+                // check if title fits
                 if (!title_fits)
                 {
                     // Draw scrolling title
@@ -168,28 +189,31 @@ namespace UTILS
                                                                    title_color,
                                                                    THEME_COLOR_BG);
                 }
-                // check it message fits
+                // check if message fits
                 if (!message_fits)
                 {
                     // Draw scrolling message
-                    need_update |= SCROLL_TEXT::scroll_text_render(
-                        &message_scroll_ctx,
-                        close_timeout_ms > 0
-                            ? std::format("{} {} sec", message, (uint32_t)((close_timeout_ms - (now - start_time)) / 1000))
-                                  .c_str()
-                            : message.c_str(),
-                        dialog_x + 10,
-                        dialog_y + 10 + VERTICAL_SPACING,
-                        message_color,
-                        THEME_COLOR_BG);
+                    std::string msg_text = close_timeout_ms > 0 ? std::format("{} {} sec", message, remaining_sec) : message;
+                    need_update |= SCROLL_TEXT::scroll_text_render(&message_scroll_ctx,
+                                                                   msg_text.c_str(),
+                                                                   dialog_x + 10,
+                                                                   dialog_y + 10 + VERTICAL_SPACING,
+                                                                   message_color,
+                                                                   THEME_COLOR_BG,
+                                                                   sec_changed);
+                    if (sec_changed)
+                    {
+                        need_update = true;
+                    }
                 }
-                else if (close_timeout_ms > 0)
+                else if (sec_changed)
                 {
-                    hal->canvas()->setTextColor(message_color);
-                    hal->canvas()->drawCenterString(
-                        std::format("{} {} sec", message, (uint32_t)((close_timeout_ms - (now - start_time)) / 1000)).c_str(),
-                        dialog_x + DIALOG_WIDTH / 2,
-                        dialog_y + 10 + VERTICAL_SPACING);
+                    int msg_y = dialog_y + 10 + VERTICAL_SPACING;
+                    hal->canvas()->fillRect(dialog_x + 2, msg_y, DIALOG_WIDTH - 4, hal->canvas()->fontHeight(FONT_16), THEME_COLOR_BG);
+                    hal->canvas()->setTextColor(message_color, THEME_COLOR_BG);
+                    hal->canvas()->drawCenterString(std::format("{} {} sec", message, remaining_sec).c_str(),
+                                                    dialog_x + DIALOG_WIDTH / 2,
+                                                    msg_y);
                     need_update = true;
                 }
                 if (hal->home_button()->is_pressed())
